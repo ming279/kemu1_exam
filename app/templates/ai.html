@@ -1,8 +1,8 @@
 {% extends 'base.html' %}
 {% block title %}AI 答案验证 - 科目一模拟考试系统{% endblock %}
 {% block content %}
-<h2>AI 答案验证（LLM 接口配置 · token 成本统计）</h2>
-<p class="muted">用途：让大模型逐题独立作答题库题目，与标准答案交叉比对，标出疑似错题；每次调用的 token 消耗与耗时自动落库并折算成本。</p>
+<h2>AI 答案验证（盲测 + 仲裁 · token 成本统计）</h2>
+<p class="muted">验证算法：① 带图题直接跳过 → ② 模型只看题目独立作答（盲测，看不到标准答案），代码比对归一化答案 → ③ 仅对分歧题发起仲裁（题目+标准答案+盲答一起给模型依据法规评审）。每次调用的 token 消耗与耗时自动落库并折算成本。</p>
 
 <div class="card">
   <h3>API 接口配置（openai 兼容接口，密钥仅存本机数据库）</h3>
@@ -20,6 +20,7 @@
     <label>API Key：<input name="api_key" type="password" value="{{ cfg.api_key if cfg else '' }}" placeholder="sk-…" style="min-width:280px"></label>
     <br><br>
     <label>模型：<input name="model" id="model" list="model-list" value="{{ cfg.model if cfg else '' }}" style="min-width:220px"></label>
+    <label>视觉模型（可选）：<input name="vl_model" value="{{ cfg.vl_model if cfg and cfg.vl_model else '' }}" placeholder="如 qwen-vl-plus，用于带图题" style="min-width:220px"></label>
     <datalist id="model-list"></datalist>
     <button class="btn" type="submit">保存配置</button>
   </form>
@@ -47,8 +48,16 @@
         <option value="multi">仅多选题</option>
       </select>
     </label>
-    <label>数量上限：<input name="limit" value="50" style="width:90px">（每题一次调用，可先用小批量试跑）</label>
+    <label>数量：<input name="limit" placeholder="留空=全部" style="width:90px">（小数量如 30 用于功能测试；留空 = 全量验证）</label>
+    <label><input type="checkbox" name="include_images"> 包含图片题（需已配置视觉模型）</label>
     <button class="btn" type="submit">开始验证</button>
+  </form>
+  <form method="post" action="{{ url_for('ai_report') }}" class="inline">
+    <button class="btn secondary" type="submit">导出验证报告</button>
+  </form>
+  <form method="post" action="{{ url_for('ai_clear') }}" class="inline"
+        onsubmit="return confirm('确定清空全部验证记录与批次历史？此操作不可恢复，所有题目将回到待验证状态。')">
+    <button class="btn danger" type="submit">清空验证记录</button>
   </form>
 </div>
 
@@ -63,28 +72,40 @@
     </tr>
     {% else %}<tr><td colspan="6" class="muted">暂无调用记录，先启动一次验证任务</td></tr>{% endfor %}
   </table>
-  <p>判定分布：一致 <b>{{ verdicts.get('correct', 0) }}</b> ·
-     不一致 <span class="tag-bad">{{ verdicts.get('wrong', 0) }}</span> ·
-     无法判定 <span class="muted">{{ verdicts.get('uncertain', 0) }}</span>
-     ｜ 当前配置模型待验证 <b>{{ pending }}</b> 题</p>
+  <p>判定分布：盲答一致 <b>{{ verdicts.get('correct', 0) }}</b> ·
+     仲裁维持 <span class="muted">{{ verdicts.get('kept', 0) }}</span> ·
+     疑似错题 <span class="tag-bad">{{ verdicts.get('wrong', 0) }}</span> ·
+     无法判定 <span class="muted">{{ verdicts.get('uncertain', 0) }}</span> ·
+     带图跳过 <span class="muted">{{ verdicts.get('skipped', 0) }}</span>
+     ｜ 纯文本待验证 <b>{{ pending_text }}</b> 题 ·
+     图片题待验证 <b>{{ pending_img }}</b> 题</p>
 </div>
 
 <div class="card">
   <h3>
-    最近验证结果
-    {% if verdict_filter %}<a class="muted" href="{{ url_for('ai_page') }}">（查看全部）</a>
-    {% else %}<a class="muted tag-bad" href="{{ url_for('ai_page', verdict='wrong') }}">只看不一致</a>{% endif %}
+    验证结果明细
+    <select onchange="location.href = this.value ? '{{ url_for('ai_page') }}?batch=' + this.value : '{{ url_for('ai_page') }}'" style="margin-left:8px">
+      <option value="">全部批次（累计）</option>
+      {% for b in batches %}
+      <option value="{{ b.id }}" {% if batch_filter == b.id %}selected{% endif %}>批次 #{{ b.id }} · {{ b.done }}/{{ b.total }} 题 · {{ {'running':'进行中','done':'完成','failed':'失败','interrupted':'已中断'}.get(b.status, b.status) }}</option>
+      {% endfor %}
+    </select>
+    {% if verdict_filter %}<a class="muted" href="{{ url_for('ai_page', batch=batch_filter or None) }}">（清除判定筛选）</a>
+    {% else %}<a class="muted tag-bad" href="{{ url_for('ai_page', verdict='wrong', batch=batch_filter or None) }}">只看疑似错题</a>{% endif %}
   </h3>
   <table>
-    <tr><th>题目</th><th>题干</th><th>标准答案</th><th>AI 答案</th><th>判定</th><th>理由</th><th>tokens</th></tr>
+    <tr><th>题目</th><th>批次</th><th>题干</th><th>标准答案</th><th>AI 答案</th><th>判定</th><th>理由</th><th>tokens</th></tr>
     {% for r in results %}
     <tr>
       <td>#{{ r.question_id }}</td>
+      <td class="muted">{% if r.batch_id %}#{{ r.batch_id }}{% else %}—{% endif %}</td>
       <td>{{ r.stem }}{% if r.stem|length >= 44 %}…{% endif %}</td>
       <td>{% if r.qtype == 'judge' %}{{ '正确' if r.correct_labels == 'A' else '错误' }}{% else %}{{ r.correct_labels }}{% endif %}</td>
       <td>{% if r.qtype == 'judge' %}{{ '正确' if r.ai_answer == 'T' else ('错误' if r.ai_answer == 'F' else r.ai_answer) }}{% else %}{{ r.ai_answer }}{% endif %}</td>
-      <td>{% if r.verdict == 'correct' %}<span class="tag-ok">一致</span>
-          {% elif r.verdict == 'wrong' %}<span class="tag-bad">不一致</span>
+      <td>{% if r.verdict == 'correct' %}<span class="tag-ok">盲答一致</span>
+          {% elif r.verdict == 'wrong' %}<span class="tag-bad">疑似错题</span>
+          {% elif r.verdict == 'kept' %}<span class="muted">仲裁维持</span>
+          {% elif r.verdict == 'skipped' %}<span class="muted">带图跳过</span>
           {% else %}<span class="muted">无法判定</span>{% endif %}</td>
       <td class="muted">{{ r.reason }}</td>
       <td class="muted">{{ r.prompt_tokens }}+{{ r.completion_tokens }}</td>
@@ -116,17 +137,25 @@ providerSel.addEventListener('change', () => fillProvider(true));
 const watchCard = document.getElementById('watch-card');
 if (watchCard) {
   const bid = watchCard.dataset.batch;
-  const STATUS_NAME = {running: '进行中', done: '完成', failed: '失败'};
+  const STATUS_NAME = {running: '进行中', done: '完成', failed: '失败', interrupted: '已中断'};
   const timer = setInterval(async () => {
     const r = await fetch(`/admin/ai/verify/status/${bid}`);
     if (!r.ok) return;
     const d = await r.json();
     document.getElementById('watch-text').textContent =
       `状态：${STATUS_NAME[d.status] || d.status} ｜ ` +
-      `进度 ${d.done}/${d.total} ｜ 一致 ${d.correct_n} · 不一致 ${d.wrong_n} · 无法判定 ${d.uncertain_n} ｜ ${d.message || ''}`;
+      `进度 ${d.done}/${d.total} ｜ 盲答一致 ${d.correct_n} · 仲裁维持 ${d.kept_n || 0} · ` +
+      `疑似错题 ${d.wrong_n} · 无法判定 ${d.uncertain_n} · 带图跳过 ${d.skipped_n || 0} ｜ ${d.message || ''}`;
     if (d.status !== 'running') {
       clearInterval(timer);
-      setTimeout(() => location.href = '{{ url_for("ai_page") }}', 2500);
+      const bad = (d.status === 'failed' || d.status === 'interrupted');
+      document.getElementById('watch-text').innerHTML =
+        `<b>${STATUS_NAME[d.status] || d.status}</b> ｜ 进度 ${d.done}/${d.total} ｜ ` +
+        `盲答一致 <b>${d.correct_n}</b> · 仲裁维持 ${d.kept_n || 0} · ` +
+        `疑似错题 <span class="tag-bad">${d.wrong_n}</span> · 无法判定 ${d.uncertain_n} · ` +
+        `带图跳过 ${d.skipped_n || 0}<br>` +
+        `${d.message || ''}<br>` +
+        (bad ? '' : `<a href="{{ url_for("ai_page") }}">刷新页面查看下方"最近验证结果"明细</a>`);
     }
   }, 2000);
 }

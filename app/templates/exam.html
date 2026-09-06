@@ -16,7 +16,7 @@
       {% endfor %}
     </div>
 
-    <div class="ac-section-title">单选题（{{ judges|length + 1 }}-{{ total }}）</div>
+    <div class="ac-section-title">选择题（{{ judges|length + 1 }}-{{ total }}）</div>
     <div class="ac-grid">
       {% for q in singles %}
       <a class="ac-cell" href="#q-{{ q.seq }}" data-qseq="{{ q.seq }}" title="第 {{ q.seq }} 题">
@@ -30,7 +30,7 @@
 
   <div class="exam-questions">
     <h2>模拟考试（第 {{ pid }} 卷）</h2>
-    <p class="muted">共 {{ total }} 题：判断题 {{ judges|length }} 题 + 单选题 {{ singles|length }} 题，全部作答后点击交卷。</p>
+    <p class="muted">共 {{ total }} 题：判断题 {{ judges|length }} 题 + 选择题 {{ singles|length }} 题，全部作答后点击交卷。</p>
     <form id="examForm" method="post" action="{{ url_for('exam_submit', pid=pid) }}">
       <h3 class="section-head">第一部分 · 判断题（{{ judges|length }} 题）</h3>
       {% for q in judges %}
@@ -39,7 +39,7 @@
       </div>
       {% endfor %}
 
-      <h3 class="section-head">第二部分 · 单选题（{{ singles|length }} 题）</h3>
+      <h3 class="section-head">第二部分 · 选择题（{{ singles|length }} 题）</h3>
       {% for q in singles %}
       <div id="q-{{ q.seq }}" data-qseq="{{ q.seq }}">
         {{ render_question(q, interactive=True, num=q.seq) }}

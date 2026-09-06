@@ -1,0 +1,959 @@
+{
+ "tables": {
+  "ai_verification": {
+   "count": 30,
+   "cols": [
+    {
+     "name": "id",
+     "type": "bigint",
+     "null": "NO",
+     "key": "PRI",
+     "default": null,
+     "comment": ""
+    },
+    {
+     "name": "question_id",
+     "type": "int",
+     "null": "NO",
+     "key": "MUL",
+     "default": null,
+     "comment": ""
+    },
+    {
+     "name": "model",
+     "type": "varchar(100)",
+     "null": "NO",
+     "key": "",
+     "default": null,
+     "comment": ""
+    },
+    {
+     "name": "verdict",
+     "type": "enum('correct','wrong','uncertain')",
+     "null": "NO",
+     "key": "",
+     "default": null,
+     "comment": ""
+    },
+    {
+     "name": "ai_answer",
+     "type": "varchar(50)",
+     "null": "NO",
+     "key": "",
+     "default": null,
+     "comment": ""
+    },
+    {
+     "name": "reason",
+     "type": "varchar(500)",
+     "null": "YES",
+     "key": "",
+     "default": null,
+     "comment": ""
+    },
+    {
+     "name": "prompt_tokens",
+     "type": "int",
+     "null": "NO",
+     "key": "",
+     "default": "0",
+     "comment": ""
+    },
+    {
+     "name": "completion_tokens",
+     "type": "int",
+     "null": "NO",
+     "key": "",
+     "default": "0",
+     "comment": ""
+    },
+    {
+     "name": "latency_ms",
+     "type": "int",
+     "null": "NO",
+     "key": "",
+     "default": "0",
+     "comment": ""
+    },
+    {
+     "name": "created_at",
+     "type": "timestamp",
+     "null": "NO",
+     "key": "",
+     "default": "CURRENT_TIMESTAMP",
+     "comment": ""
+    }
+   ]
+  },
+  "category": {
+   "count": 12,
+   "cols": [
+    {
+     "name": "id",
+     "type": "int",
+     "null": "NO",
+     "key": "PRI",
+     "default": null,
+     "comment": ""
+    },
+    {
+     "name": "name",
+     "type": "varchar(100)",
+     "null": "NO",
+     "key": "UNI",
+     "default": null,
+     "comment": "分类名称"
+    },
+    {
+     "name": "parent_id",
+     "type": "int",
+     "null": "YES",
+     "key": "MUL",
+     "default": null,
+     "comment": "父分类ID，NULL为顶级"
+    }
+   ]
+  },
+  "exam_detail": {
+   "count": 1700,
+   "cols": [
+    {
+     "name": "id",
+     "type": "bigint",
+     "null": "NO",
+     "key": "PRI",
+     "default": null,
+     "comment": ""
+    },
+    {
+     "name": "paper_id",
+     "type": "int",
+     "null": "NO",
+     "key": "MUL",
+     "default": null,
+     "comment": ""
+    },
+    {
+     "name": "question_id",
+     "type": "int",
+     "null": "NO",
+     "key": "MUL",
+     "default": null,
+     "comment": ""
+    },
+    {
+     "name": "seq_no",
+     "type": "int",
+     "null": "NO",
+     "key": "",
+     "default": null,
+     "comment": "卷内题号"
+    },
+    {
+     "name": "user_answer",
+     "type": "varchar(10)",
+     "null": "YES",
+     "key": "",
+     "default": null,
+     "comment": "用户答案，如 A / √ / ABD"
+    },
+    {
+     "name": "is_correct",
+     "type": "tinyint(1)",
+     "null": "YES",
+     "key": "",
+     "default": null,
+     "comment": "判分结果，未答为NULL"
+    }
+   ]
+  },
+  "exam_paper": {
+   "count": 17,
+   "cols": [
+    {
+     "name": "id",
+     "type": "int",
+     "null": "NO",
+     "key": "PRI",
+     "default": null,
+     "comment": ""
+    },
+    {
+     "name": "user_id",
+     "type": "int",
+     "null": "NO",
+     "key": "MUL",
+     "default": null,
+     "comment": ""
+    },
+    {
+     "name": "total_count",
+     "type": "int",
+     "null": "NO",
+     "key": "",
+     "default": null,
+     "comment": "组卷题目数"
+    },
+    {
+     "name": "score",
+     "type": "decimal(5,2)",
+     "null": "YES",
+     "key": "",
+     "default": null,
+     "comment": "得分"
+    },
+    {
+     "name": "status",
+     "type": "enum('in_progress','finished')",
+     "null": "NO",
+     "key": "",
+     "default": "in_progress",
+     "comment": ""
+    },
+    {
+     "name": "started_at",
+     "type": "timestamp",
+     "null": "NO",
+     "key": "",
+     "default": "CURRENT_TIMESTAMP",
+     "comment": ""
+    },
+    {
+     "name": "submitted_at",
+     "type": "timestamp",
+     "null": "YES",
+     "key": "",
+     "default": null,
+     "comment": ""
+    }
+   ]
+  },
+  "image": {
+   "count": 757,
+   "cols": [
+    {
+     "name": "id",
+     "type": "int",
+     "null": "NO",
+     "key": "PRI",
+     "default": null,
+     "comment": ""
+    },
+    {
+     "name": "content_hash",
+     "type": "char(64)",
+     "null": "NO",
+     "key": "UNI",
+     "default": null,
+     "comment": "SHA-256内容哈希，去重键"
+    },
+    {
+     "name": "mime_type",
+     "type": "varchar(50)",
+     "null": "NO",
+     "key": "",
+     "default": null,
+     "comment": "MIME类型"
+    },
+    {
+     "name": "file_size",
+     "type": "int",
+     "null": "NO",
+     "key": "",
+     "default": null,
+     "comment": "字节数"
+    },
+    {
+     "name": "data",
+     "type": "longblob",
+     "null": "NO",
+     "key": "",
+     "default": null,
+     "comment": "图片二进制数据"
+    },
+    {
+     "name": "ref_count",
+     "type": "int",
+     "null": "NO",
+     "key": "",
+     "default": "0",
+     "comment": "被题目引用次数"
+    }
+   ]
+  },
+  "import_batch": {
+   "count": 3,
+   "cols": [
+    {
+     "name": "id",
+     "type": "int",
+     "null": "NO",
+     "key": "PRI",
+     "default": null,
+     "comment": ""
+    },
+    {
+     "name": "source_type",
+     "type": "enum('public_source','web_url')",
+     "null": "NO",
+     "key": "",
+     "default": null,
+     "comment": ""
+    },
+    {
+     "name": "source_name",
+     "type": "varchar(200)",
+     "null": "NO",
+     "key": "",
+     "default": null,
+     "comment": ""
+    },
+    {
+     "name": "source_url",
+     "type": "varchar(500)",
+     "null": "YES",
+     "key": "",
+     "default": null,
+     "comment": ""
+    },
+    {
+     "name": "year_version",
+     "type": "varchar(20)",
+     "null": "NO",
+     "key": "",
+     "default": null,
+     "comment": ""
+    },
+    {
+     "name": "fetched",
+     "type": "int",
+     "null": "NO",
+     "key": "",
+     "default": "0",
+     "comment": ""
+    },
+    {
+     "name": "imported",
+     "type": "int",
+     "null": "NO",
+     "key": "",
+     "default": "0",
+     "comment": ""
+    },
+    {
+     "name": "duplicates",
+     "type": "int",
+     "null": "NO",
+     "key": "",
+     "default": "0",
+     "comment": ""
+    },
+    {
+     "name": "status",
+     "type": "enum('running','done','failed')",
+     "null": "NO",
+     "key": "",
+     "default": "running",
+     "comment": ""
+    },
+    {
+     "name": "message",
+     "type": "text",
+     "null": "YES",
+     "key": "",
+     "default": null,
+     "comment": ""
+    },
+    {
+     "name": "created_at",
+     "type": "timestamp",
+     "null": "NO",
+     "key": "",
+     "default": "CURRENT_TIMESTAMP",
+     "comment": ""
+    }
+   ]
+  },
+  "llm_config": {
+   "count": 1,
+   "cols": [
+    {
+     "name": "id",
+     "type": "int",
+     "null": "NO",
+     "key": "PRI",
+     "default": null,
+     "comment": ""
+    },
+    {
+     "name": "provider",
+     "type": "varchar(50)",
+     "null": "NO",
+     "key": "",
+     "default": null,
+     "comment": ""
+    },
+    {
+     "name": "base_url",
+     "type": "varchar(200)",
+     "null": "NO",
+     "key": "",
+     "default": null,
+     "comment": ""
+    },
+    {
+     "name": "api_key",
+     "type": "varchar(200)",
+     "null": "NO",
+     "key": "",
+     "default": null,
+     "comment": ""
+    },
+    {
+     "name": "model",
+     "type": "varchar(100)",
+     "null": "NO",
+     "key": "",
+     "default": null,
+     "comment": ""
+    },
+    {
+     "name": "updated_at",
+     "type": "timestamp",
+     "null": "NO",
+     "key": "",
+     "default": "CURRENT_TIMESTAMP",
+     "comment": ""
+    }
+   ]
+  },
+  "option": {
+   "count": 10517,
+   "cols": [
+    {
+     "name": "id",
+     "type": "int",
+     "null": "NO",
+     "key": "PRI",
+     "default": null,
+     "comment": ""
+    },
+    {
+     "name": "question_id",
+     "type": "int",
+     "null": "NO",
+     "key": "MUL",
+     "default": null,
+     "comment": ""
+    },
+    {
+     "name": "label",
+     "type": "char(1)",
+     "null": "NO",
+     "key": "",
+     "default": null,
+     "comment": "选项标号 A/B/C/D"
+    },
+    {
+     "name": "content",
+     "type": "text",
+     "null": "NO",
+     "key": "",
+     "default": null,
+     "comment": "选项内容"
+    },
+    {
+     "name": "is_correct",
+     "type": "tinyint(1)",
+     "null": "NO",
+     "key": "",
+     "default": "0",
+     "comment": "是否为正确答案"
+    }
+   ]
+  },
+  "practice": {
+   "count": 2,
+   "cols": [
+    {
+     "name": "id",
+     "type": "bigint",
+     "null": "NO",
+     "key": "PRI",
+     "default": null,
+     "comment": ""
+    },
+    {
+     "name": "user_id",
+     "type": "int",
+     "null": "NO",
+     "key": "MUL",
+     "default": null,
+     "comment": ""
+    },
+    {
+     "name": "question_id",
+     "type": "int",
+     "null": "NO",
+     "key": "MUL",
+     "default": null,
+     "comment": ""
+    },
+    {
+     "name": "user_answer",
+     "type": "varchar(10)",
+     "null": "YES",
+     "key": "",
+     "default": null,
+     "comment": ""
+    },
+    {
+     "name": "is_correct",
+     "type": "tinyint(1)",
+     "null": "NO",
+     "key": "",
+     "default": null,
+     "comment": ""
+    },
+    {
+     "name": "practiced_at",
+     "type": "timestamp",
+     "null": "NO",
+     "key": "MUL",
+     "default": "CURRENT_TIMESTAMP",
+     "comment": ""
+    }
+   ]
+  },
+  "question": {
+   "count": 3449,
+   "cols": [
+    {
+     "name": "id",
+     "type": "int",
+     "null": "NO",
+     "key": "PRI",
+     "default": null,
+     "comment": ""
+    },
+    {
+     "name": "source_id",
+     "type": "int",
+     "null": "YES",
+     "key": "",
+     "default": null,
+     "comment": "原始文档题号（供核对）"
+    },
+    {
+     "name": "stem",
+     "type": "text",
+     "null": "NO",
+     "key": "MUL",
+     "default": null,
+     "comment": "题干"
+    },
+    {
+     "name": "qtype",
+     "type": "enum('judge','single','multi')",
+     "null": "NO",
+     "key": "",
+     "default": null,
+     "comment": "题型：判断/单选/多选"
+    },
+    {
+     "name": "category_id",
+     "type": "int",
+     "null": "YES",
+     "key": "MUL",
+     "default": null,
+     "comment": "所属分类"
+    },
+    {
+     "name": "year_version",
+     "type": "varchar(20)",
+     "null": "NO",
+     "key": "",
+     "default": "2026",
+     "comment": "题库年份版本（增量导入用）"
+    },
+    {
+     "name": "created_at",
+     "type": "timestamp",
+     "null": "NO",
+     "key": "",
+     "default": "CURRENT_TIMESTAMP",
+     "comment": ""
+    }
+   ]
+  },
+  "question_image": {
+   "count": 827,
+   "cols": [
+    {
+     "name": "question_id",
+     "type": "int",
+     "null": "NO",
+     "key": "PRI",
+     "default": null,
+     "comment": ""
+    },
+    {
+     "name": "image_id",
+     "type": "int",
+     "null": "NO",
+     "key": "PRI",
+     "default": null,
+     "comment": ""
+    },
+    {
+     "name": "position",
+     "type": "tinyint",
+     "null": "NO",
+     "key": "",
+     "default": "0",
+     "comment": "图在题内出现顺序"
+    }
+   ]
+  },
+  "user": {
+   "count": 2,
+   "cols": [
+    {
+     "name": "id",
+     "type": "int",
+     "null": "NO",
+     "key": "PRI",
+     "default": null,
+     "comment": ""
+    },
+    {
+     "name": "username",
+     "type": "varchar(50)",
+     "null": "NO",
+     "key": "UNI",
+     "default": null,
+     "comment": "登录账号"
+    },
+    {
+     "name": "password_hash",
+     "type": "char(64)",
+     "null": "NO",
+     "key": "",
+     "default": null,
+     "comment": "SHA-256密码摘要"
+    },
+    {
+     "name": "real_name",
+     "type": "varchar(50)",
+     "null": "YES",
+     "key": "",
+     "default": null,
+     "comment": "姓名"
+    },
+    {
+     "name": "role",
+     "type": "enum('admin','student')",
+     "null": "NO",
+     "key": "",
+     "default": "student",
+     "comment": "角色"
+    },
+    {
+     "name": "created_at",
+     "type": "timestamp",
+     "null": "NO",
+     "key": "",
+     "default": "CURRENT_TIMESTAMP",
+     "comment": ""
+    }
+   ]
+  },
+  "v_question_stat": {
+   "count": 3449,
+   "cols": [
+    {
+     "name": "question_id",
+     "type": "int",
+     "null": "NO",
+     "key": "",
+     "default": "0",
+     "comment": ""
+    },
+    {
+     "name": "stem",
+     "type": "text",
+     "null": "NO",
+     "key": "",
+     "default": null,
+     "comment": "题干"
+    },
+    {
+     "name": "qtype",
+     "type": "enum('judge','single','multi')",
+     "null": "NO",
+     "key": "",
+     "default": null,
+     "comment": "题型：判断/单选/多选"
+    },
+    {
+     "name": "attempt_count",
+     "type": "bigint",
+     "null": "NO",
+     "key": "",
+     "default": "0",
+     "comment": ""
+    },
+    {
+     "name": "correct_count",
+     "type": "decimal(25,0)",
+     "null": "NO",
+     "key": "",
+     "default": "0",
+     "comment": ""
+    },
+    {
+     "name": "correct_rate",
+     "type": "decimal(31,2)",
+     "null": "YES",
+     "key": "",
+     "default": null,
+     "comment": ""
+    }
+   ]
+  },
+  "v_user_stat": {
+   "count": 2,
+   "cols": [
+    {
+     "name": "user_id",
+     "type": "int",
+     "null": "NO",
+     "key": "",
+     "default": "0",
+     "comment": ""
+    },
+    {
+     "name": "username",
+     "type": "varchar(50)",
+     "null": "NO",
+     "key": "",
+     "default": null,
+     "comment": "登录账号"
+    },
+    {
+     "name": "total_answered",
+     "type": "bigint",
+     "null": "NO",
+     "key": "",
+     "default": "0",
+     "comment": ""
+    },
+    {
+     "name": "total_correct",
+     "type": "decimal(25,0)",
+     "null": "NO",
+     "key": "",
+     "default": "0",
+     "comment": ""
+    },
+    {
+     "name": "accuracy",
+     "type": "decimal(31,2)",
+     "null": "YES",
+     "key": "",
+     "default": null,
+     "comment": ""
+    },
+    {
+     "name": "wrong_total",
+     "type": "bigint",
+     "null": "NO",
+     "key": "",
+     "default": "0",
+     "comment": ""
+    },
+    {
+     "name": "wrong_active",
+     "type": "decimal(23,0)",
+     "null": "NO",
+     "key": "",
+     "default": "0",
+     "comment": ""
+    }
+   ]
+  },
+  "verify_batch": {
+   "count": 1,
+   "cols": [
+    {
+     "name": "id",
+     "type": "int",
+     "null": "NO",
+     "key": "PRI",
+     "default": null,
+     "comment": ""
+    },
+    {
+     "name": "model",
+     "type": "varchar(100)",
+     "null": "NO",
+     "key": "",
+     "default": null,
+     "comment": ""
+    },
+    {
+     "name": "scope",
+     "type": "varchar(20)",
+     "null": "NO",
+     "key": "",
+     "default": null,
+     "comment": ""
+    },
+    {
+     "name": "total",
+     "type": "int",
+     "null": "NO",
+     "key": "",
+     "default": "0",
+     "comment": ""
+    },
+    {
+     "name": "done",
+     "type": "int",
+     "null": "NO",
+     "key": "",
+     "default": "0",
+     "comment": ""
+    },
+    {
+     "name": "correct_n",
+     "type": "int",
+     "null": "NO",
+     "key": "",
+     "default": "0",
+     "comment": ""
+    },
+    {
+     "name": "wrong_n",
+     "type": "int",
+     "null": "NO",
+     "key": "",
+     "default": "0",
+     "comment": ""
+    },
+    {
+     "name": "uncertain_n",
+     "type": "int",
+     "null": "NO",
+     "key": "",
+     "default": "0",
+     "comment": ""
+    },
+    {
+     "name": "status",
+     "type": "enum('running','done','failed')",
+     "null": "NO",
+     "key": "",
+     "default": "running",
+     "comment": ""
+    },
+    {
+     "name": "message",
+     "type": "text",
+     "null": "YES",
+     "key": "",
+     "default": null,
+     "comment": ""
+    },
+    {
+     "name": "created_at",
+     "type": "timestamp",
+     "null": "NO",
+     "key": "",
+     "default": "CURRENT_TIMESTAMP",
+     "comment": ""
+    }
+   ]
+  },
+  "wrong_book": {
+   "count": 191,
+   "cols": [
+    {
+     "name": "id",
+     "type": "bigint",
+     "null": "NO",
+     "key": "PRI",
+     "default": null,
+     "comment": ""
+    },
+    {
+     "name": "user_id",
+     "type": "int",
+     "null": "NO",
+     "key": "MUL",
+     "default": null,
+     "comment": ""
+    },
+    {
+     "name": "question_id",
+     "type": "int",
+     "null": "NO",
+     "key": "MUL",
+     "default": null,
+     "comment": ""
+    },
+    {
+     "name": "wrong_count",
+     "type": "int",
+     "null": "NO",
+     "key": "",
+     "default": "1",
+     "comment": "累计错误次数"
+    },
+    {
+     "name": "last_wrong_at",
+     "type": "timestamp",
+     "null": "NO",
+     "key": "",
+     "default": "CURRENT_TIMESTAMP",
+     "comment": ""
+    },
+    {
+     "name": "mastered",
+     "type": "tinyint(1)",
+     "null": "NO",
+     "key": "",
+     "default": "0",
+     "comment": "是否已掌握（移出错题本）"
+    }
+   ]
+  }
+ },
+ "views": {
+  "v_question_stat": "CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW `v_question_stat` AS select `q`.`id` AS `question_id`,`q`.`stem` AS `stem`,`q`.`qtype` AS `qtype`,coalesce(`s`.`attempt_count`,0) AS `attempt_count`,coalesce(`s`.`correct_count`,0) AS `correct_count`,round(((coalesce(`s`.`correct_count`,0) * 100.0) / nullif(`s`.`attempt_count`,0)),2) AS `correct_rate` from (`question` `q` left join (select `t`.`question_id` AS `question_id`,count(0) AS `attempt_count`,sum(`t`.`is_correct`) AS `correct_count` from (select `exam_detail`.`question_id` AS `question_id`,`exam_detail`.`is_correct` AS `is_correct` from `exam_detail` where (`exam_detail`.`is_correct` is not null) union all select `practice`.`question_id` AS `question_id`,`practice`.`is_correct` AS `is_correct` from `practice`) `t` group by `t`.`question_id`) `s` on((`s`.`question_id` = `q`.`id`)))",
+  "v_question_stat#rows": 3449,
+  "v_user_stat": "CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW `v_user_stat` AS select `u`.`id` AS `user_id`,`u`.`username` AS `username`,coalesce(`p`.`total_answered`,0) AS `total_answered`,coalesce(`p`.`total_correct`,0) AS `total_correct`,round(((coalesce(`p`.`total_correct`,0) * 100.0) / nullif(`p`.`total_answered`,0)),2) AS `accuracy`,coalesce(`w`.`wrong_total`,0) AS `wrong_total`,coalesce(`w`.`wrong_active`,0) AS `wrong_active` from ((`user` `u` left join (select `practice`.`user_id` AS `user_id`,count(0) AS `total_answered`,sum(`practice`.`is_correct`) AS `total_correct` from `practice` group by `practice`.`user_id`) `p` on((`p`.`user_id` = `u`.`id`))) left join (select `wrong_book`.`user_id` AS `user_id`,count(0) AS `wrong_total`,sum((0 = `wrong_book`.`mastered`)) AS `wrong_active` from `wrong_book` group by `wrong_book`.`user_id`) `w` on((`w`.`user_id` = `u`.`id`)))",
+  "v_user_stat#rows": 2
+ },
+ "stats": {
+  "question_total": 3449,
+  "by_type": {
+   "judge": 980,
+   "single": 2466,
+   "multi": 3
+  },
+  "by_year": {
+   "2021": 342,
+   "2022": 797,
+   "2025": 2,
+   "2026": 2308
+  },
+  "image_total": 757,
+  "user_total": 2,
+  "paper_total": 17,
+  "practice_total": 2,
+  "wrong_total": 191,
+  "category_total": 12,
+  "categorized": 3449
+ }
+}
