@@ -1,0 +1,134 @@
+{% extends 'base.html' %}
+{% block title %}AI 答案验证 - 科目一模拟考试系统{% endblock %}
+{% block content %}
+<h2>AI 答案验证（LLM 接口配置 · token 成本统计）</h2>
+<p class="muted">用途：让大模型逐题独立作答题库题目，与标准答案交叉比对，标出疑似错题；每次调用的 token 消耗与耗时自动落库并折算成本。</p>
+
+<div class="card">
+  <h3>API 接口配置（openai 兼容接口，密钥仅存本机数据库）</h3>
+  <form method="post" action="{{ url_for('ai_save') }}" class="inline">
+    <label>服务商：
+      <select name="provider" id="provider" style="min-width:260px">
+        {% for key, p in providers.items() %}
+        <option value="{{ key }}" data-baseurl="{{ p.base_url }}" data-models="{{ p.models|join(',') }}"
+                {% if cfg and cfg.provider == key %}selected{% endif %}>{{ p.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <br><br>
+    <label>接口地址：<input name="base_url" id="base_url" value="{{ cfg.base_url if cfg else '' }}" style="min-width:380px"></label>
+    <label>API Key：<input name="api_key" type="password" value="{{ cfg.api_key if cfg else '' }}" placeholder="sk-…" style="min-width:280px"></label>
+    <br><br>
+    <label>模型：<input name="model" id="model" list="model-list" value="{{ cfg.model if cfg else '' }}" style="min-width:220px"></label>
+    <datalist id="model-list"></datalist>
+    <button class="btn" type="submit">保存配置</button>
+  </form>
+  <form method="post" action="{{ url_for('ai_test') }}" class="inline">
+    <button class="btn secondary" type="submit">测试连接</button>
+  </form>
+  <p class="muted" style="margin-top:8px">当前状态：{% if cfg %}已配置 {{ cfg.provider }} / {{ cfg.model }}{% else %}未配置{% endif %}。各服务商在控制台创建 Key 后即可使用；推荐智谱 glm-4-flash（免费）。</p>
+</div>
+
+{% if request.args.get('watch') %}
+<div class="card" id="watch-card" data-batch="{{ request.args.get('watch') }}">
+  <h3>验证任务进度（批次 #{{ request.args.get('watch') }}）</h3>
+  <p id="watch-text" class="muted">查询中…</p>
+</div>
+{% endif %}
+
+<div class="card">
+  <h3>启动答案验证任务</h3>
+  <form method="post" action="{{ url_for('ai_verify_start') }}" class="inline">
+    <label>范围：
+      <select name="scope">
+        <option value="all">全部题目</option>
+        <option value="judge">仅判断题</option>
+        <option value="single">仅单选题</option>
+        <option value="multi">仅多选题</option>
+      </select>
+    </label>
+    <label>数量上限：<input name="limit" value="50" style="width:90px">（每题一次调用，可先用小批量试跑）</label>
+    <button class="btn" type="submit">开始验证</button>
+  </form>
+</div>
+
+<div class="card">
+  <h3>Token 用量与成本统计（按模型汇总，费用为按公开价估算）</h3>
+  <table>
+    <tr><th>模型</th><th>调用次数</th><th>输入 tokens</th><th>输出 tokens</th><th>平均耗时</th><th>估算费用（元）</th></tr>
+    {% for r in stats %}
+    <tr>
+      <td>{{ r.model }}</td><td>{{ r.calls }}</td><td>{{ r.pt or 0 }}</td><td>{{ r.ct or 0 }}</td>
+      <td>{{ r.avg_ms }} ms</td><td>{{ r.cost }}</td>
+    </tr>
+    {% else %}<tr><td colspan="6" class="muted">暂无调用记录，先启动一次验证任务</td></tr>{% endfor %}
+  </table>
+  <p>判定分布：一致 <b>{{ verdicts.get('correct', 0) }}</b> ·
+     不一致 <span class="tag-bad">{{ verdicts.get('wrong', 0) }}</span> ·
+     无法判定 <span class="muted">{{ verdicts.get('uncertain', 0) }}</span>
+     ｜ 当前配置模型待验证 <b>{{ pending }}</b> 题</p>
+</div>
+
+<div class="card">
+  <h3>
+    最近验证结果
+    {% if verdict_filter %}<a class="muted" href="{{ url_for('ai_page') }}">（查看全部）</a>
+    {% else %}<a class="muted tag-bad" href="{{ url_for('ai_page', verdict='wrong') }}">只看不一致</a>{% endif %}
+  </h3>
+  <table>
+    <tr><th>题目</th><th>题干</th><th>标准答案</th><th>AI 答案</th><th>判定</th><th>理由</th><th>tokens</th></tr>
+    {% for r in results %}
+    <tr>
+      <td>#{{ r.question_id }}</td>
+      <td>{{ r.stem }}{% if r.stem|length >= 44 %}…{% endif %}</td>
+      <td>{% if r.qtype == 'judge' %}{{ '正确' if r.correct_labels == 'A' else '错误' }}{% else %}{{ r.correct_labels }}{% endif %}</td>
+      <td>{% if r.qtype == 'judge' %}{{ '正确' if r.ai_answer == 'T' else ('错误' if r.ai_answer == 'F' else r.ai_answer) }}{% else %}{{ r.ai_answer }}{% endif %}</td>
+      <td>{% if r.verdict == 'correct' %}<span class="tag-ok">一致</span>
+          {% elif r.verdict == 'wrong' %}<span class="tag-bad">不一致</span>
+          {% else %}<span class="muted">无法判定</span>{% endif %}</td>
+      <td class="muted">{{ r.reason }}</td>
+      <td class="muted">{{ r.prompt_tokens }}+{{ r.completion_tokens }}</td>
+    </tr>
+    {% else %}<tr><td colspan="7" class="muted">暂无记录</td></tr>{% endfor %}
+  </table>
+</div>
+
+<script>
+const providerSel = document.getElementById('provider');
+const baseInput = document.getElementById('base_url');
+const modelInput = document.getElementById('model');
+const modelList = document.getElementById('model-list');
+function fillProvider(auto) {
+  const opt = providerSel.selectedOptions[0];
+  if (!opt) return;
+  if (auto || !baseInput.value) baseInput.value = opt.dataset.baseurl;
+  modelList.innerHTML = '';
+  opt.dataset.models.split(',').forEach(m => {
+    const o = document.createElement('option');
+    o.value = m;
+    modelList.appendChild(o);
+  });
+  if (auto || !modelInput.value) modelInput.value = opt.dataset.models.split(',')[0];
+}
+providerSel.addEventListener('change', () => fillProvider(true));
+{% if not cfg %}fillProvider(true);{% else %}fillProvider(false);{% endif %}
+
+const watchCard = document.getElementById('watch-card');
+if (watchCard) {
+  const bid = watchCard.dataset.batch;
+  const STATUS_NAME = {running: '进行中', done: '完成', failed: '失败'};
+  const timer = setInterval(async () => {
+    const r = await fetch(`/admin/ai/verify/status/${bid}`);
+    if (!r.ok) return;
+    const d = await r.json();
+    document.getElementById('watch-text').textContent =
+      `状态：${STATUS_NAME[d.status] || d.status} ｜ ` +
+      `进度 ${d.done}/${d.total} ｜ 一致 ${d.correct_n} · 不一致 ${d.wrong_n} · 无法判定 ${d.uncertain_n} ｜ ${d.message || ''}`;
+    if (d.status !== 'running') {
+      clearInterval(timer);
+      setTimeout(() => location.href = '{{ url_for("ai_page") }}', 2500);
+    }
+  }, 2000);
+}
+</script>
+{% endblock %}

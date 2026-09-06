@@ -1,0 +1,11 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="card">
+  <h2>本轮练习完成</h2>
+  <p>已练习 {{ total }} 题，答题记录与错题本已更新。</p>
+  <form method="post" action="{{ url_for('practice_start') }}" class="inline">
+    <button class="btn" type="submit">再来一轮</button>
+  </form>
+  <a class="btn secondary" href="{{ url_for('index') }}">返回首页</a>
+</div>
+{% endblock %}

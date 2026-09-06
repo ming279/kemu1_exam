@@ -1,0 +1,43 @@
+{% macro render_question(q, name_prefix='', interactive=False, show_correct=False, user_labels=None, num=None) %}
+<div class="card q-card">
+  {% if num %}<span class="qnum">{{ num }}.</span>{% endif %}
+  <span class="qtype">{{ QTYPE_NAME[q.qtype] }}</span>
+  <b>{{ q.stem }}</b>
+  {% for iid in q.images %}
+    <img class="qimg" src="{{ url_for('image', iid=iid) }}" alt="题目配图">
+  {% endfor %}
+  {% for o in q.options %}
+    <div class="opt">
+      <label>
+        {% if interactive %}
+          {% if q.qtype == 'multi' %}
+            <input type="checkbox" name="{{ name_prefix }}q_{{ q.id }}" value="{{ o.label }}">
+          {% else %}
+            <input type="radio" name="{{ name_prefix }}q_{{ q.id }}" value="{{ o.label }}">
+          {% endif %}
+        {% endif %}
+        {{ o.label }}、{{ o.content }}
+      </label>
+    </div>
+  {% endfor %}
+</div>
+{% endmacro %}
+
+{% macro render_review_question(q) %}
+{% set correct_labels = (q.options | selectattr('is_correct') | map(attribute='label') | list) | join('') %}
+<div class="card q-card {{ 'right' if q.is_correct else 'wrong' }}">
+  <span class="qtype">{{ q.seq }}. {{ QTYPE_NAME[q.qtype] }}</span>
+  {% if not q.is_correct %}<span class="tag-bad">答错</span>{% else %}<span class="tag-ok">正确</span>{% endif %}
+  <b>{{ q.stem }}</b>
+  {% for iid in q.images %}
+    <img class="qimg" src="{{ url_for('image', iid=iid) }}" alt="题目配图">
+  {% endfor %}
+  {% for o in q.options %}
+    <div class="opt {{ 'correct' if o.is_correct else (o.label in (q.user_answer or '') and not q.is_correct and 'wrong' or '') }}">
+      {{ o.label }}、{{ o.content }}
+      {% if o.is_correct %}<span class="tag-ok">（正确答案）</span>{% endif %}
+    </div>
+  {% endfor %}
+  <div class="muted">你的答案：{{ q.user_answer or '未作答' }}｜正确答案：{{ correct_labels }}</div>
+</div>
+{% endmacro %}

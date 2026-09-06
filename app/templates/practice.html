@@ -1,0 +1,38 @@
+{% extends 'base.html' %}
+{% block content %}
+<h2>顺序练习（第 {{ idx + 1 }} / {{ total }} 题）</h2>
+{% if feedback %}
+<div class="feedback {{ 'ok' if feedback.ok else 'bad' }}">
+  {% if feedback.ok %}<span class="tag-ok">回答正确！</span>
+  {% else %}<span class="tag-bad">回答错误</span> 你的答案：{{ feedback.user_answer }}｜正确答案：{{ feedback.correct }}{% endif %}
+  {% if idx + 1 < total %}
+    <a class="btn" href="{{ url_for('practice_page', idx=idx + 1) }}">下一题</a>
+  {% else %}
+    <a class="btn" href="{{ url_for('practice_summary') }}">查看本轮小结</a>
+  {% endif %}
+</div>
+{% endif %}
+<div class="card q-card">
+  <span class="qtype">{{ QTYPE_NAME[question.qtype] }}</span>
+  <b>{{ question.stem }}</b>
+  {% for iid in question.images %}
+    <img class="qimg" src="{{ url_for('image', iid=iid) }}" alt="题目配图">
+  {% endfor %}
+  <form method="post" action="{{ url_for('practice_answer') }}">
+    <input type="hidden" name="idx" value="{{ idx }}">
+    {% for o in question.options %}
+      <div class="opt">
+        <label>
+          {% if question.qtype == 'multi' %}
+            <input type="checkbox" name="q_{{ question.id }}" value="{{ o.label }}">
+          {% else %}
+            <input type="radio" name="q_{{ question.id }}" value="{{ o.label }}" required>
+          {% endif %}
+          {{ o.label }}、{{ o.content }}
+        </label>
+      </div>
+    {% endfor %}
+    <button class="btn" type="submit">提交答案</button>
+  </form>
+</div>
+{% endblock %}

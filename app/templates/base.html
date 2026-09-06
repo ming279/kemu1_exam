@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}科目一模拟考试系统{% endblock %}</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<nav class="nav">
+  <a class="brand" href="{{ url_for('index') }}">驾照科目一模拟考试系统</a>
+  {% if cur_user %}
+  <div class="links">
+    <a href="{{ url_for('index') }}">首页</a>
+    <form method="post" action="{{ url_for('exam_start') }}" class="inline">
+      <button class="linklike" type="submit">模拟考试</button>
+    </form>
+    <form method="post" action="{{ url_for('practice_start') }}" class="inline">
+      <button class="linklike" type="submit">顺序练习</button>
+    </form>
+    <a href="{{ url_for('wrongbook') }}">错题本</a>
+    <a href="{{ url_for('stats') }}">我的统计</a>
+    {% if cur_user.role == 'admin' %}<a href="{{ url_for('admin_stats') }}">全局统计</a><a href="{{ url_for('crawl_page') }}">题库采集</a><a href="{{ url_for('ai_page') }}">AI 验证</a>{% endif %}
+    <span class="muted">{{ cur_user.username }}（{{ '管理员' if cur_user.role == 'admin' else '考生' }}）</span>
+    <a href="{{ url_for('logout') }}">退出</a>
+  </div>
+  {% endif %}
+</nav>
+<div class="container">
+  {% with msgs = get_flashed_messages(with_categories=true) %}
+    {% for cat, m in msgs %}<div class="flash {{ cat }}">{{ m }}</div>{% endfor %}
+  {% endwith %}
+  {% block content %}{% endblock %}
+</div>
+</body>
+</html>

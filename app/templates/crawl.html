@@ -1,0 +1,87 @@
+{% extends 'base.html' %}
+{% block title %}题库采集 - 科目一模拟考试系统{% endblock %}
+{% block content %}
+<h2>题库采集（网上爬题 · 增量导入）</h2>
+<p class="muted">从公开题库源或指定网站抓取科目一题目，自动去重后增量入库；新题以 year_version 标记年份版本，供历年题库对比。</p>
+
+{% if request.args.get('watch') %}
+<div class="card" id="progress-card" data-batch="{{ request.args.get('watch') }}">
+  <h3>采集进度（批次 #{{ request.args.get('watch') }}）</h3>
+  <p id="progress-text" class="muted">查询中…</p>
+</div>
+{% endif %}
+
+<div class="card">
+  <h3>方式一：公开题库源抓取</h3>
+  <form method="post" action="{{ url_for('crawl_start') }}">
+    <input type="hidden" name="mode" value="public">
+    <label>数据源：
+      <select name="source" style="min-width:340px">
+        {% for key, src in sources.items() %}
+        <option value="{{ key }}">{{ src.name }}（默认年份 {{ src.default_year }}）</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>年份版本：<input name="year_version" placeholder="留空用默认" style="width:120px"></label>
+    <button class="btn" type="submit">开始抓取</button>
+  </form>
+</div>
+
+<div class="card">
+  <h3>方式二：指定网站爬取</h3>
+  <form method="post" action="{{ url_for('crawl_start') }}">
+    <input type="hidden" name="mode" value="url">
+    <label>网址：<input name="url" placeholder="https://…（含题目与答案的页面）" style="min-width:380px"></label>
+    <label>年份版本：<input name="year_version" placeholder="默认 2025" style="width:120px"></label>
+    <button class="btn secondary" type="submit">开始爬取</button>
+  </form>
+  <p class="muted">说明：解析器按「题干 + A/B/C/D 选项 + 答案：X」的常见网页排版提取，无法识别的页面会在日志中说明。</p>
+</div>
+
+<div class="card">
+  <h3>各年份版本题量</h3>
+  <table>
+    <tr><th>year_version</th><th>题数</th></tr>
+    {% for r in year_dist %}<tr><td>{{ r.year_version }}</td><td>{{ r.cnt }}</td></tr>{% endfor %}
+  </table>
+</div>
+
+<div class="card">
+  <h3>采集批次记录（import_batch 表）</h3>
+  <table>
+    <tr><th>批次</th><th>方式</th><th>来源</th><th>年份</th><th>抓取</th><th>新增</th><th>重复</th><th>状态</th><th>日志</th></tr>
+    {% for b in batches %}
+    <tr>
+      <td>#{{ b.id }}</td>
+      <td>{{ '公开源' if b.source_type == 'public_source' else '指定网站' }}</td>
+      <td>{{ b.source_name }}</td>
+      <td>{{ b.year_version }}</td>
+      <td>{{ b.fetched }}</td>
+      <td>{{ b.imported }}</td>
+      <td>{{ b.duplicates }}</td>
+      <td>{{ {'running': '进行中', 'done': '完成', 'failed': '失败'}[b.status] }}</td>
+      <td class="muted">{{ b.message or '—' }}</td>
+    </tr>
+    {% else %}<tr><td colspan="9" class="muted">暂无采集记录</td></tr>{% endfor %}
+  </table>
+</div>
+
+<script>
+const card = document.getElementById('progress-card');
+if (card) {
+  const bid = card.dataset.batch;
+  const timer = setInterval(async () => {
+    const r = await fetch(`/admin/crawl/status/${bid}`);
+    if (!r.ok) return;
+    const d = await r.json();
+    const name = {running: '进行中', done: '完成', failed: '失败'}[d.status];
+    document.getElementById('progress-text').textContent =
+      `状态：${name} ｜ 抓取 ${d.fetched} ｜ 新增 ${d.imported} ｜ 重复 ${d.duplicates} ｜ ${d.message || ''}`;
+    if (d.status !== 'running') {
+      clearInterval(timer);
+      setTimeout(() => location.href = '{{ url_for("crawl_page") }}', 2500);
+    }
+  }, 2000);
+}
+</script>
+{% endblock %}

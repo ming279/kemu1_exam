@@ -1,0 +1,13 @@
+# Python
+__pycache__/
+*.pyc
+
+# IDE
+.idea/
+.vscode/
+
+# Office 临时锁文件
+~$*
+
+# 运行时临时文件
+*.log
