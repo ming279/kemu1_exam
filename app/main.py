@@ -569,20 +569,26 @@ def crawl_status(bid):
 # ---------------- llm 模块（加分项③⑥：AI 答案验证 + token 成本统计） ----------------
 import llm as llm_mod
 
-VERDICT_NAME = {'correct': '与标准答案一致', 'wrong': '与标准答案不一致', 'uncertain': '无法判定'}
+VERDICT_NAME = {'correct': '盲答一致', 'kept': '仲裁维持', 'wrong': '疑似错题',
+                'uncertain': '无法判定', 'skipped': '带图跳过'}
 
 
 @app.route('/admin/ai')
 @login_required
 @admin_required
 def ai_page():
+    llm_mod.mark_zombie()          # 服务重启遗留的僵死批次自动标记
     cfg = llm_mod.get_config()
-    stats, verdicts, pending = llm_mod.verify_stats()
+    stats, verdicts, pending_text, pending_img = llm_mod.verify_stats()
     verdict_filter = request.args.get('verdict')
-    results = llm_mod.recent_results(50, verdict_filter)
+    batch_filter = request.args.get('batch', type=int)
+    results = llm_mod.recent_results(50, verdict_filter, batch_filter)
     return render_template('ai.html', cfg=cfg, providers=llm_mod.PROVIDERS,
-                           stats=stats, verdicts=verdicts, pending=pending,
+                           stats=stats, verdicts=verdicts,
+                           pending_text=pending_text, pending_img=pending_img,
                            results=results, verdict_filter=verdict_filter,
+                           batch_filter=batch_filter,
+                           batches=llm_mod.recent_batches(8),
                            VERDICT_NAME=VERDICT_NAME)
 
 
@@ -594,10 +600,11 @@ def ai_save():
     base_url = request.form['base_url'].strip()
     api_key = request.form['api_key'].strip()
     model = request.form['model'].strip()
+    vl_model = request.form.get('vl_model', '').strip()
     if not (base_url and api_key and model):
         flash('接口地址、API Key、模型名均不能为空', 'danger')
     else:
-        llm_mod.save_config(provider, base_url, api_key, model)
+        llm_mod.save_config(provider, base_url, api_key, model, vl_model)
         flash('API 配置已保存', 'success')
     return redirect(url_for('ai_page'))
 
@@ -616,16 +623,40 @@ def ai_test():
 @admin_required
 def ai_verify_start():
     scope = request.form.get('scope', 'all')
-    try:
-        limit = max(1, min(5000, int(request.form.get('limit', 50))))
-    except ValueError:
-        limit = 50
-    bid, err = llm_mod.start_verify(scope, limit)
+    raw = request.form.get('limit', '').strip()
+    limit = None                    # 留空 / 0 = 全部待验证题
+    if raw:
+        try:
+            limit = max(1, min(50000, int(raw)))
+        except ValueError:
+            limit = 50
+    bid, err = llm_mod.start_verify(scope, limit,
+                                    include_images=request.form.get('include_images') == 'on')
     if err:
         flash(err, 'danger')
         return redirect(url_for('ai_page'))
-    flash(f'验证任务 #{bid} 已启动', 'success')
+    flash(f'验证任务 #{bid} 已启动（{"全量" if limit is None else f"前 {limit} 题"}'
+          f'{"，含图片题" if request.form.get("include_images") == "on" else ""}）', 'success')
     return redirect(url_for('ai_page', watch=bid))
+
+
+@app.route('/admin/ai/clear', methods=['POST'])
+@login_required
+@admin_required
+def ai_clear():
+    n1, n2, n3 = llm_mod.clear_all()
+    flash(f'已清空 {n3} 条批次明细、{n1} 条验证记录与 {n2} 个批次，'
+          f'全部题目回到待验证状态', 'success')
+    return redirect(url_for('ai_page'))
+
+
+@app.route('/admin/ai/report', methods=['POST'])
+@login_required
+@admin_required
+def ai_report():
+    path, n_wrong = llm_mod.export_report()
+    flash(f'已生成 answer_report.md（疑似错题 {n_wrong} 道）→ {path}', 'success')
+    return redirect(url_for('ai_page'))
 
 
 @app.route('/admin/ai/verify/status/<int:bid>')

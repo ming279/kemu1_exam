@@ -168,6 +168,7 @@ CREATE TABLE llm_config (
     base_url    VARCHAR(200) NOT NULL COMMENT 'API 地址（openai 兼容）',
     api_key     VARCHAR(200) NOT NULL COMMENT 'API Key',
     model       VARCHAR(100) NOT NULL COMMENT '模型名',
+    vl_model    VARCHAR(100) NULL COMMENT '视觉模型（可选，用于带图题验证）',
     updated_at  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) COMMENT 'LLM 接口配置';
 
@@ -178,7 +179,8 @@ CREATE TABLE ai_verification (
     id                BIGINT AUTO_INCREMENT PRIMARY KEY,
     question_id       INT NOT NULL,
     model             VARCHAR(100) NOT NULL,
-    verdict           ENUM('correct','wrong','uncertain') NOT NULL COMMENT 'AI 判定：正确/错误/存疑',
+    batch_id          INT NULL COMMENT '最近一次验证所属批次',
+    verdict           ENUM('correct','kept','wrong','uncertain','skipped') NOT NULL COMMENT 'AI 判定：盲答一致/仲裁维持/疑似错题/无法判定/带图跳过',
     ai_answer         VARCHAR(50) NOT NULL COMMENT 'AI 给出的答案',
     reason            VARCHAR(500) NULL COMMENT '判定理由',
     prompt_tokens     INT NOT NULL DEFAULT 0,
@@ -200,11 +202,34 @@ CREATE TABLE verify_batch (
     done      INT NOT NULL DEFAULT 0,
     correct_n INT NOT NULL DEFAULT 0,
     wrong_n   INT NOT NULL DEFAULT 0,
+    kept_n    INT NOT NULL DEFAULT 0 COMMENT '仲裁维持标准答案数',
     uncertain_n INT NOT NULL DEFAULT 0,
-    status    ENUM('running','done','failed') NOT NULL DEFAULT 'running',
+    skipped_n INT NOT NULL DEFAULT 0 COMMENT '带图题跳过数',
+    status    ENUM('running','done','failed','interrupted') NOT NULL DEFAULT 'running',
     message   TEXT NULL,
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+               ON UPDATE CURRENT_TIMESTAMP COMMENT '心跳时间，用于僵死批次检测'
 ) COMMENT 'AI 验证批次';
+
+-- -------------------------------------------------------------
+-- 16. AI 验证批次明细表（历史档案：每批次每题一条，永不覆盖）
+-- -------------------------------------------------------------
+CREATE TABLE verify_result (
+    id            BIGINT AUTO_INCREMENT PRIMARY KEY,
+    batch_id      INT NOT NULL COMMENT '所属验证批次',
+    question_id   INT NOT NULL,
+    model         VARCHAR(100) NOT NULL,
+    verdict       ENUM('correct','kept','wrong','uncertain','skipped') NOT NULL
+                  COMMENT '盲答一致/仲裁维持/疑似错题/无法判定/带图跳过',
+    ai_answer     VARCHAR(50) NOT NULL COMMENT 'AI 盲测作答',
+    reason        VARCHAR(500) NULL COMMENT '判定/仲裁理由',
+    prompt_tokens     INT NOT NULL DEFAULT 0,
+    completion_tokens INT NOT NULL DEFAULT 0,
+    latency_ms        INT NOT NULL DEFAULT 0 COMMENT '含仲裁的合并耗时',
+    KEY idx_vr_batch (batch_id),
+    KEY idx_vr_q (question_id)
+) COMMENT 'AI 验证批次明细（历史档案，不覆盖）';
 
 -- =============================================================
 -- 统计视图
