@@ -1,0 +1,13 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="card auth">
+  <h2>注册</h2>
+  <form method="post">
+    <label>账号</label>
+    <input type="text" name="username" required>
+    <label>密码</label>
+    <input type="password" name="password" required>
+    <button class="btn" type="submit">注册</button>
+  </form>
+</div>
+{% endblock %}

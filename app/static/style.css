@@ -1,0 +1,67 @@
+:root { --brand:#2563eb; --bg:#f5f7fb; --card:#fff; --line:#e5e7eb; --ok:#16a34a; --bad:#dc2626; }
+* { box-sizing: border-box; }
+body { margin:0; font-family:"Microsoft YaHei",system-ui,sans-serif; background:var(--bg); color:#111827; }
+.nav { display:flex; align-items:center; justify-content:space-between; padding:12px 24px; background:var(--brand); color:#fff; flex-wrap:wrap; gap:8px; }
+.brand { font-weight:700; font-size:18px; color:#fff; text-decoration:none; }
+.links { display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
+.links a { color:#dbeafe; text-decoration:none; }
+.links a:hover { color:#fff; }
+.muted { opacity:.8; font-size:13px; }
+.inline { display:inline; }
+.linklike { background:none; border:none; color:#dbeafe; cursor:pointer; font-size:14px; padding:0; }
+.linklike:hover { color:#fff; }
+.container { max-width:960px; margin:24px auto; padding:0 16px; }
+.card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:20px; margin-bottom:16px; }
+.flash { padding:10px 14px; border-radius:8px; margin-bottom:14px; }
+.flash.success { background:#dcfce7; color:#14532d; }
+.flash.danger { background:#fee2e2; color:#7f1d1d; }
+.btn { display:inline-block; background:var(--brand); color:#fff; border:none; border-radius:8px; padding:9px 20px; font-size:15px; cursor:pointer; text-decoration:none; }
+.btn.secondary { background:#6b7280; }
+.btn.danger { background:var(--bad); }
+.btn.small { padding:4px 12px; font-size:13px; }
+.btn:hover { opacity:.9; }
+table { width:100%; border-collapse:collapse; }
+th, td { border-bottom:1px solid var(--line); padding:8px 10px; text-align:left; font-size:14px; }
+th { background:#f3f4f6; }
+.q-card { border-left:4px solid var(--brand); }
+.q-card.wrong { border-left-color:var(--bad); }
+.q-card.right { border-left-color:var(--ok); }
+.qtype { display:inline-block; font-size:12px; background:#e0e7ff; color:#3730a3; border-radius:4px; padding:1px 8px; margin-right:8px; }
+.qnum { display:inline-block; font-weight:800; font-size:16px; margin-right:8px; color:#111827; }
+.qimg { max-width:340px; display:block; margin:10px 0; border:1px solid var(--line); border-radius:6px; }
+.opt { margin:6px 0; }
+.opt label { cursor:pointer; }
+.opt.correct { color:var(--ok); font-weight:600; }
+.opt.wrong { color:var(--bad); }
+.tag-ok { color:var(--ok); font-weight:700; }
+.tag-bad { color:var(--bad); font-weight:700; }
+.score { font-size:42px; font-weight:800; text-align:center; margin:10px 0; }
+.grid { display:grid; grid-template-columns:repeat(4,1fr); gap:14px; }
+.grid .num { font-size:26px; font-weight:700; color:var(--brand); }
+.auth { max-width:380px; margin:60px auto; }
+input[type=text], input[type=password] { width:100%; padding:9px 12px; border:1px solid var(--line); border-radius:8px; margin:6px 0 14px; }
+.feedback { padding:10px 14px; border-radius:8px; margin:12px 0; }
+.feedback.ok { background:#dcfce7; }
+.feedback.bad { background:#fee2e2; }
+
+/* ---- 考试页：左侧答题卡 ---- */
+html { scroll-behavior:smooth; }
+.exam-layout { display:flex; gap:18px; align-items:flex-start; }
+.answer-card { position:sticky; top:12px; flex:0 0 280px; background:var(--card);
+  border:1px solid var(--line); border-radius:10px; padding:14px;
+  max-height:calc(100vh - 24px); overflow-y:auto; }
+.answer-card h3 { margin:0 0 8px; }
+.ac-grid { display:grid; grid-template-columns:repeat(6, 1fr); gap:4px; margin:6px 0 12px; }
+.ac-section-title { font-size:13px; font-weight:700; color:#374151; margin-top:10px; padding-bottom:4px; border-bottom:1px dashed var(--line); }
+.section-head { margin:22px 0 12px; padding:8px 14px; background:#e0e7ff; color:#3730a3; border-radius:8px; }
+.ac-cell { display:flex; flex-direction:column; align-items:center; gap:3px;
+  padding:4px 0; text-decoration:none; color:#374151; border-radius:6px; font-size:12px; }
+.ac-cell:hover { background:#eff6ff; }
+.ac-dot { width:9px; height:9px; border-radius:50%; border:1.5px solid #9ca3af; display:block; }
+.ac-cell.answered .ac-dot { background:var(--brand); border-color:var(--brand); }
+.btn-ready { background:var(--ok); }
+.exam-questions { flex:1; min-width:0; }
+@media (max-width: 800px) {
+  .exam-layout { flex-direction:column; }
+  .answer-card { position:static; flex:none; width:100%; max-height:none; }
+}

@@ -1,0 +1,86 @@
+{% extends 'base.html' %}
+{% from '_macros.html' import render_question with context %}
+{% block content %}
+{% set total = judges|length + singles|length %}
+<div class="exam-layout">
+  <aside class="answer-card">
+    <h3>答题卡</h3>
+    <div class="muted">已答 <b id="ac-count">0</b> / {{ total }} 题</div>
+
+    <div class="ac-section-title">判断题（1-{{ judges|length }}）</div>
+    <div class="ac-grid">
+      {% for q in judges %}
+      <a class="ac-cell" href="#q-{{ q.seq }}" data-qseq="{{ q.seq }}" title="第 {{ q.seq }} 题">
+        <span class="ac-num">{{ q.seq }}</span><span class="ac-dot"></span>
+      </a>
+      {% endfor %}
+    </div>
+
+    <div class="ac-section-title">单选题（{{ judges|length + 1 }}-{{ total }}）</div>
+    <div class="ac-grid">
+      {% for q in singles %}
+      <a class="ac-cell" href="#q-{{ q.seq }}" data-qseq="{{ q.seq }}" title="第 {{ q.seq }} 题">
+        <span class="ac-num">{{ q.seq }}</span><span class="ac-dot"></span>
+      </a>
+      {% endfor %}
+    </div>
+
+    <button class="btn" form="examForm" type="submit" onclick="return confirm('确认交卷？')">交卷</button>
+  </aside>
+
+  <div class="exam-questions">
+    <h2>模拟考试（第 {{ pid }} 卷）</h2>
+    <p class="muted">共 {{ total }} 题：判断题 {{ judges|length }} 题 + 单选题 {{ singles|length }} 题，全部作答后点击交卷。</p>
+    <form id="examForm" method="post" action="{{ url_for('exam_submit', pid=pid) }}">
+      <h3 class="section-head">第一部分 · 判断题（{{ judges|length }} 题）</h3>
+      {% for q in judges %}
+      <div id="q-{{ q.seq }}" data-qseq="{{ q.seq }}">
+        {{ render_question(q, interactive=True, num=q.seq) }}
+      </div>
+      {% endfor %}
+
+      <h3 class="section-head">第二部分 · 单选题（{{ singles|length }} 题）</h3>
+      {% for q in singles %}
+      <div id="q-{{ q.seq }}" data-qseq="{{ q.seq }}">
+        {{ render_question(q, interactive=True, num=q.seq) }}
+      </div>
+      {% endfor %}
+      <button class="btn" type="submit" onclick="return confirm('确认交卷？')">交卷</button>
+    </form>
+  </div>
+</div>
+
+<script>
+(function () {
+  var cells = {};
+  document.querySelectorAll('.ac-cell').forEach(function (c) { cells[c.dataset.qseq] = c; });
+  var total = {{ total }};
+
+  function refreshCount() {
+    var n = document.querySelectorAll('.ac-cell.answered').length;
+    document.getElementById('ac-count').textContent = n;
+    if (n === total) {
+      document.querySelector('.answer-card .btn').classList.add('btn-ready');
+    }
+  }
+  function markAnswered(input, on) {
+    var wrap = input.closest('[data-qseq]');
+    if (!wrap) return;
+    var cell = cells[wrap.dataset.qseq];
+    if (cell) cell.classList.toggle('answered', on);
+  }
+
+  document.addEventListener('change', function (e) {
+    var inp = e.target;
+    if (!inp.name || inp.name.indexOf('q_') !== 0) return;
+    var any = document.querySelector('input[name="' + inp.name.replace(/"/g, '\\"') + '"]:checked');
+    markAnswered(inp, !!any);
+    refreshCount();
+  });
+
+  document.querySelectorAll('input[type=radio]:checked, input[type=checkbox]:checked')
+    .forEach(function (inp) { markAnswered(inp, true); });
+  refreshCount();
+})();
+</script>
+{% endblock %}

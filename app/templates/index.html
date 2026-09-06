@@ -1,0 +1,20 @@
+{% extends 'base.html' %}
+{% block content %}
+<h2>欢迎，{{ cur_user.username }}</h2>
+<div class="card grid">
+  <div><div class="num">{{ stats.total }}</div>题库总题数</div>
+  <div><div class="num">{{ stats.users }}</div>注册用户</div>
+  <div><div class="num">{{ stats.papers }}</div>已完成考试</div>
+  <div><div class="num">{{ stats.my_wrong }}</div>我的未掌握错题</div>
+</div>
+<div class="card">
+  <h3>开始学习</h3>
+  <p>模拟考试每次随机抽取 <b>60 道单选 + 40 道判断</b> 共 100 题，交卷后自动判分并计入错题本。</p>
+  <form method="post" action="{{ url_for('exam_start') }}" class="inline">
+    <button class="btn" type="submit">开始模拟考试</button>
+  </form>
+  <form method="post" action="{{ url_for('practice_start') }}" class="inline">
+    <button class="btn secondary" type="submit">顺序练习（10 题）</button>
+  </form>
+</div>
+{% endblock %}

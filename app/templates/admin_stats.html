@@ -1,0 +1,79 @@
+{% extends 'base.html' %}
+{% block content %}
+<h2>管理员 · 全局统计</h2>
+<div class="card grid">
+  <div><div class="num">{{ overview.questions }}</div>题库总题数</div>
+  <div><div class="num">{{ overview.images }}</div>题库图片数</div>
+  <div><div class="num">{{ overview.users }}</div>注册用户</div>
+  <div><div class="num">{{ overview.papers }}</div>完成考试场次</div>
+</div>
+
+<div class="card">
+  <h3>用户记录管理</h3>
+  <table>
+    <tr><th>ID</th><th>用户名</th><th>姓名</th><th>试卷数</th><th>练习次数</th><th>错题数</th><th>操作</th></tr>
+    {% for u in user_rows %}
+    <tr>
+      <td>{{ u.id }}</td><td>{{ u.username }}</td><td>{{ u.real_name or '—' }}</td>
+      <td>{{ u.papers }}</td><td>{{ u.practices }}</td><td>{{ u.wrongs }}</td>
+      <td>
+        {% if u.papers or u.practices or u.wrongs %}
+        <form method="post" action="{{ url_for('admin_clear_user', uid=u.id) }}" class="inline"
+              onsubmit="return confirm('确定清除用户 {{ u.username }} 的全部考试/练习/错题记录吗？不可恢复！')">
+          <button class="btn danger small" type="submit">清除该用户记录</button>
+        </form>
+        {% else %}<span class="muted">无记录</span>{% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+
+<div class="card">
+  <h3>危险操作</h3>
+  <p class="muted">删除全体用户的考试记录、顺序练习记录与错题本，不影响题库、用户账号与 AI 验证数据。删除后不可恢复。</p>
+  <form method="post" action="{{ url_for('admin_clear_all') }}"
+        onsubmit="return confirm('确定清空全体用户的考试/练习/错题记录吗？此操作影响所有用户且不可恢复！')">
+    <button class="btn danger" type="submit">一键清空全体用户记录</button>
+  </form>
+</div>
+
+<div class="card">
+  <h3>题库题型分布</h3>
+  <table>
+    <tr><th>题型</th><th>数量</th></tr>
+    {% for r in qtype_dist %}<tr><td>{{ QTYPE_NAME[r.qtype] }}</td><td>{{ r.c }}</td></tr>{% endfor %}
+  </table>
+</div>
+
+<div class="card">
+  <h3>题库分类分布（关键词规则 + TF-IDF 质心自动归类，写入 category 表）</h3>
+  <table>
+    <tr><th>分类</th><th>题数</th><th>占比</th></tr>
+    {% for r in cat_dist %}
+    <tr>
+      <td>{{ r.name }}</td>
+      <td>{{ r.cnt }}</td>
+      <td>{{ '%.1f'|format(r.cnt * 100.0 / cat_total) }}%</td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+
+<div class="card">
+  <h3>每题答题统计（按答题量 TOP100，数据来源：v_question_stat 视图）</h3>
+  <table>
+    <tr><th>题号</th><th>题干</th><th>题型</th><th>答题次数</th><th>答对次数</th><th>正确率</th></tr>
+    {% for r in by_question %}
+    <tr>
+      <td>{{ r.question_id }}</td>
+      <td>{{ r.stem }}{% if r.stem|length >= 36 %}…{% endif %}</td>
+      <td>{{ QTYPE_NAME[r.qtype] }}</td>
+      <td>{{ r.attempt_count }}</td>
+      <td>{{ r.correct_count }}</td>
+      <td>{{ r.correct_rate if r.correct_rate is not none else '—' }}%</td>
+    </tr>
+    {% else %}<tr><td colspan="6" class="muted">暂无答题数据，先进行几次练习或考试后查看</td></tr>{% endfor %}
+  </table>
+</div>
+{% endblock %}

@@ -1,0 +1,54 @@
+{% extends 'base.html' %}
+{% block content %}
+<h2>我的统计</h2>
+<div class="card grid">
+  <div><div class="num">{{ me.total_answered or 0 }}</div>累计练习作答</div>
+  <div><div class="num">{{ me.accuracy or 0 }}%</div>练习正确率</div>
+  <div><div class="num">{{ me.wrong_active or 0 }}</div>未掌握错题</div>
+  <div><div class="num">{{ papers|length }}</div>最近考试场次</div>
+</div>
+
+<div class="card">
+  <h3>清除我的记录</h3>
+  <p class="muted">删除后不可恢复，请谨慎操作。</p>
+  <form method="post" action="{{ url_for('stats_clear_papers') }}" class="inline"
+        onsubmit="return confirm('确定删除全部考试记录吗？答题明细与成绩单将一并删除，不可恢复！')">
+    <button class="btn danger small" type="submit">仅删考试记录</button>
+  </form>
+  <form method="post" action="{{ url_for('stats_clear_practice') }}" class="inline"
+        onsubmit="return confirm('确定删除全部顺序练习记录吗？不可恢复！')">
+    <button class="btn danger small" type="submit">仅删练习记录</button>
+  </form>
+  <form method="post" action="{{ url_for('wrongbook_clear') }}" class="inline"
+        onsubmit="return confirm('确定清空错题本吗？全部错题记录（含已掌握）将被删除，不可恢复！')">
+    <input type="hidden" name="from" value="stats">
+    <button class="btn danger small" type="submit">仅删错题本</button>
+  </form>
+</div>
+
+<div class="card">
+  <h3>最近考试记录</h3>
+  <table>
+    <tr><th>试卷号</th><th>题数</th><th>得分</th><th>状态</th><th>提交时间</th><th></th></tr>
+    {% for p in papers %}
+    <tr>
+      <td>{{ p.id }}</td><td>{{ p.total_count }}</td>
+      <td>{{ p.score if p.status == 'finished' else '—' }}</td>
+      <td>{{ '已完成' if p.status == 'finished' else '进行中' }}</td>
+      <td>{{ p.submitted_at or '—' }}</td>
+      <td>{% if p.status == 'finished' %}<a href="{{ url_for('exam_result', pid=p.id) }}">查看成绩单</a>{% endif %}</td>
+    </tr>
+    {% else %}<tr><td colspan="6" class="muted">暂无考试记录</td></tr>{% endfor %}
+  </table>
+</div>
+
+<div class="card">
+  <h3>我的易错题 TOP10</h3>
+  <table>
+    <tr><th>#</th><th>题干</th><th>累计错误次数</th></tr>
+    {% for w in weak %}
+    <tr><td>{{ loop.index }}</td><td>{{ w.stem }}</td><td>{{ w.wrong_count }}</td></tr>
+    {% else %}<tr><td colspan="3" class="muted">暂无错题记录</td></tr>{% endfor %}
+  </table>
+</div>
+{% endblock %}
