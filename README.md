@@ -114,6 +114,85 @@ Token 用量与费用汇总、一键导出验证报告（`answer_report.md`）�
 └── 题库_2026.docx           # 原始题库素材（2308 题）
 ```
 
+## 数据库设计
+
+数据库 `kemu1_exam`，字符集 **utf8mb4**，存储引擎 **InnoDB**，共 **18 张基表 + 2 个视图**，按业务域分为 6 组。v2 新增表与字段的增量脚本见 `sql/migration_v2.sql`。
+
+### 表关系总览
+
+```
+user ──< exam_paper ──< exam_detail >── question ──< option
+  │        │  (task_id)                   │  ├── category（自关联 parent_id）
+  │        └──< task_record >── task      │  ├── explanation（答案解析字段）
+  ├──< practice >─────────────────────────┤  └──< question_image >── image
+  ├──< wrong_book >───────────────────────┘
+  └──< pk_challenge（challenger_uid / opponent_uid 双外键）
+
+verify_batch ──< verify_result        llm_config（独立配置表）
+ai_verification（question_id+model 唯一）   import_batch（采集批次）
+```
+
+### ① 用户域
+
+| 表 | 用途 | 关键字段 |
+|---|---|---|
+| `user` | 账号与角色 | `username` 唯一、`password_hash`（SHA-256）、`role`(admin/student)、`real_name`；v2 新增 `pk_wins`/`pk_losses`/`win_streak` 战绩字段 |
+
+### ② 题库域
+
+| 表 | 用途 | 关键字段 |
+|---|---|---|
+| `question` | 题目主表 | `stem` 题干、`qtype` 枚举(judge/single/multi)、`category_id` 外键、`year_version` 年份版本（采集增量导入用）、`explanation` 答案解析（v2）；`ft_stem` 为 **ngram 全文索引**供重复题检索 |
+| `option` | 选项 | `question_id` 外键（级联删除）、`label`(A/B/C/D/√/×)、`is_correct` 标记；唯一键 (question_id, label) |
+| `image` | 图片 BLOB | `data` LONGBLOB、`content_hash`（SHA-256 唯一键，图片去重）、`ref_count` 引用计数 |
+| `question_image` | 题-图多对多 | 联合主键 (question_id, image_id) + `position` 图序 |
+| `category` | 知识分类 | `name` 唯一、`parent_id` 自关联外键支持层级分类 |
+
+### ③ 答题域
+
+| 表 | 用途 | 关键字段 |
+|---|---|---|
+| `exam_paper` | 考试试卷 | `user_id` 外键、`total_count`、`score` decimal(5,2)、`status`(in_progress/finished)、`started_at`/`submitted_at`；v2 新增 `task_id`（NULL=自由模拟考） |
+| `exam_detail` | 试卷明细 | `paper_id` 外键（级联删除）、`question_id`、`seq_no` 卷内题号、`user_answer`、`is_correct`（未答为 NULL）；唯一键 (paper_id, seq_no)、(paper_id, question_id) 防重复落题 |
+| `practice` | 顺序练习记录 | `user_id`+`question_id` 索引、`is_correct`、`practiced_at`（带时间索引供趋势统计） |
+| `wrong_book` | 错题本 | (user_id, question_id) 唯一键、`wrong_count` 累计错次、`mastered` 是否已掌握 |
+
+### ④ 教学任务域（v2 新增）
+
+| 表 | 用途 | 关键字段 |
+|---|---|---|
+| `task` | 教师发布的任务 | `creator_uid`、`judge_count`/`single_count` 抽题数量、`time_limit_sec` 时限（NULL 不限）、`mode`(exam/practice)、`purpose`(exam 考试打乱 / review 讲解同序)、`question_ids` **发布时预生成的固定题目 ID 列表**、`shuffle_order`、`status`(draft/published/closed) |
+| `task_record` | 学生参加记录 | (task_id, uid) 唯一键、`paper_id` 关联试卷、`status`(not_started/in_progress/completed/expired)、`start_time`/`submit_time`、`elapsed_sec` 实际用时、`paused`/`pause_time` 练习暂停状态 |
+
+### ⑤ 双人 PK 域（v2 新增）
+
+| 表 | 用途 | 关键字段 |
+|---|---|---|
+| `pk_challenge` | 对战记录 | `challenger_uid`/`opponent_uid` 双外键、`question_ids`（10 题 ID）、`status` 状态机(waiting→ready→playing→finished/declined)、`current_q` 当前题号、双方 `score`/`answers` 答题串、`winner_uid`；实时房间状态存服务进程内存，落库只保存题目与战绩 |
+
+### ⑥ AI 验证与采集域
+
+| 表 | 用途 | 关键字段 |
+|---|---|---|
+| `llm_config` | LLM 接口配置 | provider/base_url/api_key/model/`vl_model` 视觉模型（仅存数据库，不入仓库） |
+| `verify_batch` | 验证批次 | 进度计数（total/done/correct_n/wrong_n/kept_n…）、`status` 含 interrupted（心跳超时自动标记） |
+| `verify_result` | 批次×题目明细 | 历史档案**永不覆盖**，支持跨批次追溯与真实 token 成本核算 |
+| `ai_verification` | 每题每模型最新判定 | (question_id, model) 唯一键、`verdict` 枚举(correct/kept/wrong/uncertain/skipped)、tokens 与耗时 |
+| `import_batch` | 题库采集批次 | 来源类型/URL、`year_version`、fetched/imported/duplicates 计数、status |
+
+### 视图（2 个）
+
+- **`v_user_stat`**：学生练习统计——`practice` 按 user 聚合总作答/正确数算正确率，LEFT JOIN `wrong_book` 聚合错题总数与未掌握数
+- **`v_question_stat`**：题目答题统计——`exam_detail` UNION ALL `practice` 后按题聚合答题量/正确量，LEFT JOIN 题目表算正确率（`NULLIF` 防除零）
+
+### 设计要点
+
+- **外键级联策略**：删试卷级联删明细、删题目级联删选项与题图关联；清除用户记录时 DELETE 主表（exam_paper/practice/wrong_book）即自动级联
+- **枚举字段约束状态机**：role、qtype、试卷/任务/对战 status、verdict 均用 ENUM 限定取值
+- **唯一键防重**：(paper_id, seq_no)、(task_id, uid)、(user_id, question_id) 等保证不重复落题/重复参加/重复错题
+- **中文全文检索**：题干 FULLTEXT 索引使用 `WITH PARSER ngram`，支持中文二元分词查重
+- **哈希去重**：密码 SHA-256 摘要存储；图片按 SHA-256 内容哈希去重，相同图片只存一份
+
 ## 快速开始
 
 ### 1. 准备数据库
@@ -178,12 +257,104 @@ AI 验证需在页面中填写服务商、Base URL、API Key、模型名（可�
 - 重复题检测报告：194 对 / 145 簇（详见 `duplicate_report.md`，可重新运行生成）
 - 自动归类全量覆盖（关键词规则 + TF-IDF）
 
-## 教学功能使用指引（v2）
+## 功能与操作详解
 
-1. **教师**登录管理员账号 →「任务管理」发布任务（选题量、考试/练习用途、时限）→「题目管理」维护答案解析
-2. **学生**登录后首页可见"我的任务"，进入作答：考试模式倒计时到点自动交卷，练习模式可暂停/继续
-3. 答题后教师在「错题排行榜」按任务筛选讲评、在「答题数据」导出课堂讲评/成绩公告等表格（CSV/Excel）
-4. 「学生排名」查看考试平均分与练习正确数双榜；「PK 挑战」中两名学生进入同一房间抢答对战
+### 角色与功能入口
+
+| 角色 | 功能入口 |
+|---|---|
+| 管理员/教师 | 题目管理（解析维护）、任务管理（发布/编辑/关闭）、错题排行榜、答题数据导出、全局统计、题库采集、AI 验证、用户记录管理 |
+| 学生 | 模拟考试、顺序练习、错题本、我的任务、我的统计、学生排名、PK 挑战 |
+
+### 教师操作流程
+
+1. **维护题库与解析**：「题目管理」分页浏览/关键词搜索，解析文本框失焦即 AJAX 自动保存，无需提交表单
+2. **发布任务**：「任务管理」→ 填写标题、判断题数量、单选题数量、时限（分钟）、模式（考试/练习）、用途（考试=可打乱防作弊 / 讲解=全班同序）→ 发布时系统按题型 `ORDER BY RAND()` 抽出固定题集存入 `task.question_ids`
+3. **任务管理**：列表可查看参加人数/完成情况；支持关闭（学生不可再进入）、重开、删除、编辑题量
+4. **考后讲评**：「错题排行榜」按任务筛选，查看错次、错误率（红≥70%/黄40-70%/蓝<40% 三色分级）、常见错误答案，配合 4 个图表讲评；「答题数据」按场景导出 CSV/Excel
+5. **教学反思**：「全局统计」查看 14 天活跃趋势、正确率仪表盘、分类薄弱点
+
+### 学生操作流程
+
+1. 登录后首页「我的任务」区块显示已发布任务及状态（未开始/进行中/已完成）
+2. 进入任务：
+   - **考试模式**：生成试卷与 `task_record`，顶部红色倒计时，到点自动交卷；不可暂停
+   - **练习模式**：后端累计计时，可随时「暂停/继续」，暂停期间计时冻结；刷新/重开页面自动恢复进度与剩余状态
+3. 交卷后自动判分：错题进入错题本，成绩单与题目解析可见
+4. 「错题本」可反复练习，掌握后标记移出；「我的统计」查看正确率仪表盘与成绩走势
+5. 「学生排名」查看双榜与段位；「PK 挑战」选择对手发起双人竞速对战
+
+### 核心业务规则
+
+| 规则 | 说明 |
+|---|---|
+| 模拟考组卷 | 判断题 40 + 单选题 60 = 100 题，与真实科目一一致；多选题仅在顺序练习出现 |
+| 任务题集 | 发布时一次性抽题固定，全班答同一套题，保证讲评口径一致 |
+| 防作弊打乱 | 用途为"考试"时，以学生 ID 为随机种子重排题目顺序（每人不同但自己两次进入一致），判断题始终排在单选题前；选项顺序不打乱；"讲解"用途全班同序 |
+| 考试计时 | 前端倒计时 + 到点自动 submit 双保险；后端以 `submitted_at` 与 `elapsed_sec` 为准 |
+| 练习计时 | `elapsed_sec` 累加已用时间段，暂停写 `pause_time`；恢复时用 `TIMESTAMPDIFF(COALESCE(pause_time,start_time), NOW())` 补当前段，刷新不丢时 |
+| 判分规则 | 判断题 √/×、单选精确匹配、多选须完全一致；未答题 `is_correct=NULL` 计错但不记用户答案 |
+| 错题本 | 练习/考试答错自动 upsert（`wrong_count+1`）；标记掌握置 `mastered=1` 移出活跃列表 |
+| PK 对战 | 10 道判断题、每题 15 秒；先答对者得分并锁定该题（对手再答不得分），答错不扣分但通知对手；答完 10 题比总分，平分判平局（双方胜/负场均不变） |
+| 排名口径 | 考试榜 `AVG(score)` 降序、练习榜 `SUM(is_correct)` 降序 |
+| 段位规则 | 🥉青铜 0-4 胜 ｜ 🥈白银 5-14 胜 ｜ 🥇黄金 15-29 胜 ｜ 💎铂金 30+ 胜；连胜 3 场显示 🔥 |
+
+## 核心实现原理
+
+### 1. 任务抽题与防作弊打乱
+
+- **发布时固定题集**：`_generate_questions_for_task()` 按题型分别 `SELECT id FROM question WHERE qtype='judge' ORDER BY RAND() LIMIT n` 抽题，ID 列表逗号拼接存入 `task.question_ids`。全班同一套题，保证讲评口径一致
+- **按人打乱顺序**：`_get_questions_for_student(task, uid)` 用 `random.Random(uid)` 作种子对题集 shuffle——同一学生每次进入顺序一致（断点续做），不同学生顺序不同（邻座看不到同号题）；判断题始终排在单选题前；选项顺序不打乱（避免答案错位）
+- **讲解模式**：`purpose='review'` 不打乱，全班同序，便于课堂逐题讲评
+
+### 2. 考试倒计时与练习计时
+
+- **考试模式**：剩余秒数 `remain = time_limit_sec - TIMESTAMPDIFF(SECOND, start_time, NOW())`；前端红色倒计时，到点自动触发交卷表单 submit（前后端双保险，改本地时间无效）
+- **练习模式（可暂停）**：`elapsed_sec` 保存已累计秒数，暂停时写 `pause_time`，恢复时计算当前段 `TIMESTAMPDIFF(SECOND, COALESCE(pause_time, start_time), NOW())` 累加；前端每 5 秒轮询 `/task/<id>/status` 同步，刷新页面/换设备登录都能恢复计时状态
+
+### 3. socketio 双人 PK 实时对战
+
+- flask-socketio **threading 模式**（`async_mode='threading'`），无需 eventlet/gevent，`socketio.run(..., allow_unsafe_werkzeug=True)` 启动，监听 `0.0.0.0` 支持局域网联机
+- **房间状态**：内存字典 `PK_ROOMS`（room_key → 双方 uid/sid/得分/题号/ready 状态）；落库仅保存题目 ID 与最终战绩
+- **事件流**：
+
+```
+connect → pk_join(join_room) → pk_ready（双方 ready 后广播 3-2-1-GO 倒计时）
+   → _pk_next_question（每题 15 秒定时器，每秒检查 locked_q 标志）
+   → pk_answer（服务端判分：答对+1 并置 locked_q 锁定该题，
+               答错仅通知本人 + opponent_wrong 通知对手可抢答）
+   → pk_emoji（快捷表情气泡）→ 10 题结束 _pk_finish
+```
+
+- **竞态控制**：题目推进逻辑只在定时器一处，答题触发锁定标志让 15 秒循环提前 break，避免"答完推进"与"超时推进"重复出题
+- **判胜负**：比总分，胜者 `pk_wins+1, win_streak+1`，负者 `pk_losses+1, win_streak=0`，平局双方不变
+- **断线处理**：disconnect 时遍历房间 emit 对手通知；题目数据在服务端保存（页面加载时不下发 `is_correct`，前端无法偷看答案）
+
+### 4. 答题数据导出（5 场景 × 2 格式）
+
+| 场景 | 数据口径 |
+|---|---|
+| review 课堂讲评 | 错题明细 + 题干/学生答案/正确答案/解析，按错次排序 |
+| scores 成绩公告 | 每场考试用户名/得分/用时/提交时间 |
+| tutor 个别辅导 | 按学生汇总错题与薄弱题型 |
+| reflect 教学反思 | 高错误率题目聚合（错误率降序）供教师反思教学 |
+| archive 全量存档 | 全部答题明细扁平表 |
+
+- **CSV**：`utf-8-sig`（带 BOM），Excel 直接打开不乱码
+- **Excel**（openpyxl）：表头加粗白字蓝底、错题行整行 `FEE2E2` 标红、列宽按内容自适应
+- **中文文件名**：Content-Disposition 用 RFC 5987 `filename*=UTF-8''<urlencode>` + ASCII fallback（`export_<时间戳>.xlsx`），兼容各浏览器
+
+### 5. ECharts 数据可视化
+
+- 后端聚合查询后 `json.dumps(..., ensure_ascii=False)` 注入模板，前端 echarts.init 渲染；echarts.min.js 本地引用无外链
+- 14 图分布：错题排行榜 4（TOP10 错误率条形/题型玫瑰图/错误答案环形/错误率区间饼）、全局统计 5（14 天双系列面积折线/正确率仪表盘/题型环形/分类条形/活跃堆叠柱）、我的统计 3（个人仪表盘/成绩走势折线带 90 分参考线/易错题条形）、排名 2（分数段渐变柱/PK 胜负环）
+- 无数据场景显示友好占位文案（如"暂无 PK 对战记录"），窗口 resize 自动重绘
+
+### 6. 关键工程经验
+
+- **only_full_group_by 兼容**：明细查询中 `GROUP_CONCAT` 必须配合 GROUP BY；取每题正确答案改用关联子查询 `(SELECT GROUP_CONCAT(label) FROM option WHERE question_id=q.id AND is_correct=1)`
+- **类型坑**：MySQL `SUM()/AVG()` 返回 Decimal，与 float 运算前需 `float()/int()` 转换
+- **PyMySQL 格式化**：SQL 字符串中字面百分号必须写 `%%` 转义（如 `'高错误率(≥70%%)'`），否则报 "not enough arguments for format string"
 
 ## 说明
 
