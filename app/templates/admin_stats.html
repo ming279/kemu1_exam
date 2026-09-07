@@ -8,6 +8,29 @@
   <div><div class="num">{{ overview.papers }}</div>完成考试场次</div>
 </div>
 
+<div class="card chart-card">
+  <h3>近 14 天考试 / 练习活跃度趋势</h3>
+  <div id="chart-trend" style="height:320px;"></div>
+</div>
+<div class="chart-grid">
+  <div class="card chart-card">
+    <h3>全体答题正确率</h3>
+    <div id="chart-gauge" style="height:280px;"></div>
+  </div>
+  <div class="card chart-card">
+    <h3>题库题型分布</h3>
+    <div id="chart-qtype" style="height:280px;"></div>
+  </div>
+  <div class="card chart-card">
+    <h3>知识分类题量 TOP10</h3>
+    <div id="chart-cats" style="height:280px;"></div>
+  </div>
+</div>
+<div class="card chart-card">
+  <h3>学生答题活跃度 TOP8（考试 + 练习）</h3>
+  <div id="chart-active" style="height:300px;"></div>
+</div>
+
 <div class="card">
   <h3>用户记录管理</h3>
   <table>
@@ -76,4 +99,89 @@
     {% else %}<tr><td colspan="6" class="muted">暂无答题数据，先进行几次练习或考试后查看</td></tr>{% endfor %}
   </table>
 </div>
+
+<script src="{{ url_for('static', filename='echarts.min.js') }}"></script>
+<script>
+(function(){
+  var trend = {{ charts.trend|safe }};
+  var qtype = {{ charts.qtype|safe }};
+  var cats = {{ charts.cats|safe }};
+  var active = {{ charts.active|safe }};
+  var gaugeVal = {{ charts.gauge }};
+  var palette = ['#2563eb','#f59e0b','#16a34a','#dc2626','#8b5cf6','#ec4899','#0891b2','#64748b'];
+
+  // 1. 14天趋势：面积折线
+  var c1 = echarts.init(document.getElementById('chart-trend'));
+  c1.setOption({
+    tooltip:{trigger:'axis'},
+    legend:{data:['完成考试','顺序练习'], top:0},
+    grid:{left:40, right:20, top:40, bottom:30},
+    xAxis:{type:'category', data:trend.dates, boundaryGap:false, axisLabel:{rotate:35, fontSize:10}},
+    yAxis:{type:'value', minInterval:1},
+    series:[
+      {name:'完成考试', type:'line', smooth:true, data:trend.papers,
+       itemStyle:{color:'#dc2626'}, areaStyle:{color:'rgba(220,38,38,0.12)'}, symbolSize:6},
+      {name:'顺序练习', type:'line', smooth:true, data:trend.practices,
+       itemStyle:{color:'#2563eb'}, areaStyle:{color:'rgba(37,99,235,0.12)'}, symbolSize:6}
+    ]
+  });
+
+  // 2. 正确率仪表盘
+  var c2 = echarts.init(document.getElementById('chart-gauge'));
+  c2.setOption({
+    series:[{
+      type:'gauge', startAngle:210, endAngle:-30, min:0, max:100,
+      progress:{show:true, width:16, itemStyle:{color: gaugeVal>=80?'#16a34a':(gaugeVal>=60?'#f59e0b':'#dc2626')}},
+      axisLine:{lineStyle:{width:16, color:[[1,'#e5e7eb']]}},
+      axisTick:{show:false}, splitLine:{length:12, lineStyle:{color:'#999'}},
+      axisLabel:{distance:22, fontSize:11}, pointer:{width:5},
+      detail:{valueAnimation:true, formatter:'{value}%', fontSize:26, offsetCenter:[0,'70%'],
+              color:'#1f2937'},
+      data:[{value:gaugeVal}]
+    }]
+  });
+
+  // 3. 题型分布环形图
+  var c3 = echarts.init(document.getElementById('chart-qtype'));
+  c3.setOption({
+    tooltip:{trigger:'item', formatter:'{b}：{c} 题（{d}%）'},
+    legend:{bottom:0},
+    color:palette,
+    series:[{type:'pie', radius:['42%','68%'],
+      itemStyle:{borderRadius:8, borderColor:'#fff', borderWidth:2},
+      label:{formatter:'{b}\n{c}题'}, data:qtype}]
+  });
+
+  // 4. 知识分类横向条形图
+  var c4 = echarts.init(document.getElementById('chart-cats'));
+  c4.setOption({
+    tooltip:{trigger:'axis', formatter:'{b}：{c} 题'},
+    grid:{left:10, right:30, top:10, bottom:20, containLabel:true},
+    xAxis:{type:'value', minInterval:1},
+    yAxis:{type:'category', data:cats.map(function(d){return d.name;}).reverse(),
+           axisLabel:{width:90, overflow:'truncate', fontSize:11}},
+    series:[{type:'bar',
+      data:cats.map(function(d,i){return {value:d.value, itemStyle:{color:palette[i%palette.length], borderRadius:[0,4,4,0]}};}).reverse(),
+      label:{show:true, position:'right', fontSize:11}}]
+  });
+
+  // 5. 用户活跃堆叠柱状图
+  var c5 = echarts.init(document.getElementById('chart-active'));
+  c5.setOption({
+    tooltip:{trigger:'axis', axisPointer:{type:'shadow'}},
+    legend:{data:['考试场次','练习次数'], top:0},
+    grid:{left:40, right:20, top:40, bottom:40},
+    xAxis:{type:'category', data:active.map(function(d){return d.name;}), axisLabel:{rotate:25}},
+    yAxis:{type:'value', minInterval:1},
+    series:[
+      {name:'考试场次', type:'bar', stack:'total', data:active.map(function(d){return d.papers;}),
+       itemStyle:{color:'#dc2626', borderRadius:[0,0,0,0]}},
+      {name:'练习次数', type:'bar', stack:'total', data:active.map(function(d){return d.practices;}),
+       itemStyle:{color:'#2563eb', borderRadius:[4,4,0,0]}}
+    ]
+  });
+
+  window.addEventListener('resize', function(){ [c1,c2,c3,c4,c5].forEach(function(c){c.resize();}); });
+})();
+</script>
 {% endblock %}

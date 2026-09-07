@@ -488,10 +488,48 @@ def admin_stats():
         "(SELECT COUNT(*) FROM practice p WHERE p.user_id=u.id) practices, "
         "(SELECT COUNT(*) FROM wrong_book wb WHERE wb.user_id=u.id) wrongs "
         "FROM `user` u ORDER BY u.id")
+    # ---- 图表数据 ----
+    import json
+    # 近14天考试/练习趋势
+    trend = q(
+        "SELECT d.dt, "
+        "(SELECT COUNT(*) FROM exam_paper ep WHERE DATE(ep.submitted_at)=d.dt "
+        " AND ep.status='finished') papers, "
+        "(SELECT COUNT(*) FROM practice p WHERE DATE(p.practiced_at)=d.dt) practices "
+        "FROM (SELECT DATE_SUB(CURDATE(), INTERVAL n DAY) dt FROM "
+        "(SELECT 0 n UNION SELECT 1 UNION SELECT 2 UNION SELECT 3 UNION SELECT 4 "
+        "UNION SELECT 5 UNION SELECT 6 UNION SELECT 7 UNION SELECT 8 UNION SELECT 9 "
+        "UNION SELECT 10 UNION SELECT 11 UNION SELECT 12 UNION SELECT 13) t) d "
+        "ORDER BY d.dt")
+    # 整体答题正确率（仪表盘）
+    acc = q("SELECT COALESCE(SUM(is_correct),0) ok, COUNT(*) total FROM exam_detail",
+            one=True)
+    acc_total = int(acc['total'] or 0)
+    acc_rate = round(float(acc['ok']) * 100.0 / acc_total, 1) if acc_total else 0
+    # 用户活跃 TOP8（柱状图）
+    active = [{'name': (r['real_name'] or r['username']),
+               'papers': r['papers'], 'practices': r['practices']}
+              for r in sorted(user_rows, key=lambda x: x['papers'] + x['practices'],
+                              reverse=True)[:8]]
+    charts = dict(
+        trend=json.dumps({
+            'dates': [str(r['dt']) for r in trend],
+            'papers': [r['papers'] for r in trend],
+            'practices': [r['practices'] for r in trend],
+        }, ensure_ascii=False),
+        qtype=json.dumps([
+            {'name': QTYPE_NAME.get(r['qtype'], r['qtype']), 'value': r['c']}
+            for r in qtype_dist], ensure_ascii=False),
+        cats=json.dumps([
+            {'name': r['name'], 'value': r['cnt']}
+            for r in cat_dist if r['cnt'] > 0][:10], ensure_ascii=False),
+        active=json.dumps(active, ensure_ascii=False),
+        gauge=acc_rate,
+    )
     return render_template('admin_stats.html', overview=overview,
                            by_question=by_question, qtype_dist=qtype_dist,
                            cat_dist=cat_dist, cat_total=cat_total,
-                           user_rows=user_rows)
+                           user_rows=user_rows, charts=charts)
 
 
 # ---------------- 功能⑥：题目管理（答案解析）----------------
@@ -913,7 +951,6 @@ def admin_wrong_rank():
 
     # 构建查询：全局或按任务
     if task_filter:
-        # 按任务筛选：通过 task_record.task_id 关联 paper_id
         rows = q(
             "SELECT q.id, LEFT(q.stem, 60) stem_short, q.qtype, q.explanation, "
             "COUNT(*) AS wrong_count, "
@@ -926,8 +963,31 @@ def admin_wrong_rank():
             "WHERE tr.task_id = %s AND ed.is_correct = 0 "
             "GROUP BY q.id ORDER BY wrong_count DESC LIMIT 50",
             (task_filter,))
+        # 题型错次分布（按任务）
+        qtype_dist = q(
+            "SELECT q.qtype, COUNT(*) AS cnt FROM exam_detail ed "
+            "JOIN question q ON q.id=ed.question_id "
+            "JOIN task_record tr ON tr.paper_id=ed.paper_id "
+            "WHERE tr.task_id=%s AND ed.is_correct=0 GROUP BY q.qtype",
+            (task_filter,))
+        # 错误答案分布
+        ans_dist = q(
+            "SELECT ed.user_answer AS ans, COUNT(*) AS cnt FROM exam_detail ed "
+            "JOIN task_record tr ON tr.paper_id=ed.paper_id "
+            "WHERE tr.task_id=%s AND ed.is_correct=0 AND ed.user_answer IS NOT NULL "
+            "GROUP BY ed.user_answer ORDER BY cnt DESC LIMIT 8",
+            (task_filter,))
+        # 错误率区间分布
+        rate_dist = q(
+            "SELECT CASE "
+            "WHEN COUNT(*)*100.0/GREATEST(COUNT(DISTINCT ed.paper_id),1) >= 70 THEN '高错误率(≥70%%)' "
+            "WHEN COUNT(*)*100.0/GREATEST(COUNT(DISTINCT ed.paper_id),1) >= 40 THEN '中错误率(40-70%%)' "
+            "ELSE '低错误率(<40%%)' END AS bucket, COUNT(*) AS cnt "
+            "FROM exam_detail ed JOIN question q ON q.id=ed.question_id "
+            "JOIN task_record tr ON tr.paper_id=ed.paper_id "
+            "WHERE tr.task_id=%s AND ed.is_correct=0 GROUP BY q.id",
+            (task_filter,))
     else:
-        # 全局：所有 exam_detail 汇总
         rows = q(
             "SELECT q.id, LEFT(q.stem, 60) stem_short, q.qtype, q.explanation, "
             "COUNT(*) AS wrong_count, "
@@ -938,9 +998,41 @@ def admin_wrong_rank():
             "JOIN question q ON q.id = ed.question_id "
             "WHERE ed.is_correct = 0 "
             "GROUP BY q.id ORDER BY wrong_count DESC LIMIT 50")
+        qtype_dist = q(
+            "SELECT q.qtype, COUNT(*) AS cnt FROM exam_detail ed "
+            "JOIN question q ON q.id=ed.question_id "
+            "WHERE ed.is_correct=0 GROUP BY q.qtype")
+        ans_dist = q(
+            "SELECT user_answer AS ans, COUNT(*) AS cnt FROM exam_detail "
+            "WHERE is_correct=0 AND user_answer IS NOT NULL "
+            "GROUP BY user_answer ORDER BY cnt DESC LIMIT 8")
+        rate_dist = q(
+            "SELECT bucket, COUNT(*) AS cnt FROM ( "
+            "SELECT CASE "
+            "WHEN COUNT(*)*100.0/GREATEST(COUNT(DISTINCT ed.paper_id),1) >= 70 THEN '高错误率(≥70%%)' "
+            "WHEN COUNT(*)*100.0/GREATEST(COUNT(DISTINCT ed.paper_id),1) >= 40 THEN '中错误率(40-70%%)' "
+            "ELSE '低错误率(<40%%)' END AS bucket "
+            "FROM exam_detail ed JOIN question q ON q.id=ed.question_id "
+            "WHERE ed.is_correct=0 GROUP BY q.id) t GROUP BY bucket")
+
+    import json
+    charts = dict(
+        top10=json.dumps([
+            {'name': (r['stem_short'] or '')[:18], 'rate': float(r['wrong_rate'] or 0),
+             'cnt': r['wrong_count']} for r in rows[:10]], ensure_ascii=False),
+        qtype=json.dumps([
+            {'name': QTYPE_NAME.get(r['qtype'], r['qtype']), 'value': r['cnt']}
+            for r in qtype_dist], ensure_ascii=False),
+        answers=json.dumps([
+            {'name': r['ans'] or '未作答', 'value': r['cnt']} for r in ans_dist],
+            ensure_ascii=False),
+        rates=json.dumps([
+            {'name': r['bucket'], 'value': r['cnt']} for r in rate_dist],
+            ensure_ascii=False),
+    )
 
     return render_template('admin_wrong_rank.html', rows=rows, tasks=tasks,
-                           task_filter=task_filter)
+                           task_filter=task_filter, charts=charts)
 
 
 # ---------------- 功能③：答题数据导出（5场景 + CSV/Excel）----------------
@@ -1287,10 +1379,34 @@ def ranking():
     my_exam_rank = next((r['rank'] for r in exam_rank if r['id'] == me['id']), None)
     my_prac_rank = next((r['rank'] for r in practice_rank if r['id'] == me['id']), None)
 
+    # ---- 图表数据：考试分数段分布 ----
+    import json
+    seg = q(
+        "SELECT bucket, COUNT(*) cnt FROM ( "
+        "SELECT CASE WHEN score<60 THEN '不及格(<60)' "
+        "WHEN score<70 THEN '及格(60-69)' WHEN score<80 THEN '中等(70-79)' "
+        "WHEN score<90 THEN '良好(80-89)' ELSE '优秀(≥90)' END AS bucket, score "
+        "FROM exam_paper WHERE status='finished') t GROUP BY bucket")
+    seg_order = ['不及格(<60)', '及格(60-69)', '中等(70-79)', '良好(80-89)', '优秀(≥90)']
+    seg_map = {r['bucket']: r['cnt'] for r in seg}
+    # PK 战绩饼图
+    pk_stat = q(
+        "SELECT COALESCE(SUM(pk_wins),0) wins, COALESCE(SUM(pk_losses),0) losses "
+        "FROM `user` WHERE role='student'", one=True)
+    charts = dict(
+        seg=json.dumps({'names': seg_order,
+                        'values': [seg_map.get(k, 0) for k in seg_order]},
+                       ensure_ascii=False),
+        pk=json.dumps([
+            {'name': '获胜场次', 'value': int(pk_stat['wins'] or 0)},
+            {'name': '失败场次', 'value': int(pk_stat['losses'] or 0)},
+        ], ensure_ascii=False),
+    )
+
     return render_template('ranking.html',
                            exam_rank=exam_rank, practice_rank=practice_rank,
                            my_exam_rank=my_exam_rank, my_prac_rank=my_prac_rank,
-                           me=me)
+                           me=me, charts=charts)
 
 
 # ---------------- 功能⑦：双人 PK 赛车（socketio）----------------
