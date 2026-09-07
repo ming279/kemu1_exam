@@ -102,7 +102,7 @@ Token 用量与费用汇总、一键导出验证报告（`answer_report.md`）�
 │       ├── admin_stats.html / stats.html # 全局统计 5 图 / 我的统计 3 图
 │       └── ...                    # 考试/练习/AI 验证/采集等
 ├── sql/
-│   ├── schema.sql           # 建库脚本（15 张表 + v_user_stat / v_question_stat 视图）
+│   ├── schema.sql           # 建库脚本（18 张基表 + v_user_stat / v_question_stat 视图）
 │   ├── migration_v2.sql     # v2 增量迁移：task/task_record/pk_challenge 表 + 解析/PK 战绩字段
 │   └── kemu1_exam_backup.sql# 全量 mysqldump 备份（含题目与图片 BLOB）
 ├── docx_parser.py           # 解析 题库_2026.docx → 结构化题目（以"答案："为锚点切题）
