@@ -8,6 +8,23 @@
   <div><div class="num">{{ papers|length }}</div>最近考试场次</div>
 </div>
 
+<div class="chart-grid">
+  <div class="card chart-card">
+    <h3>我的练习正确率</h3>
+    <div id="chart-myacc" style="height:260px;"></div>
+  </div>
+  <div class="card chart-card" style="grid-column: span 2;">
+    <h3>最近考试成绩走势</h3>
+    <div id="chart-myscore" style="height:260px;"></div>
+  </div>
+</div>
+{% if weak %}
+<div class="card chart-card">
+  <h3>我的易错题错误次数</h3>
+  <div id="chart-myweak" style="height:300px;"></div>
+</div>
+{% endif %}
+
 <div class="card">
   <h3>清除我的记录</h3>
   <p class="muted">删除后不可恢复，请谨慎操作。</p>
@@ -51,4 +68,72 @@
     {% else %}<tr><td colspan="3" class="muted">暂无错题记录</td></tr>{% endfor %}
   </table>
 </div>
+
+<script src="{{ url_for('static', filename='echarts.min.js') }}"></script>
+<script>
+(function(){
+  var myAcc = {{ me.accuracy or 0 }};
+  var finishedPapers = [
+    {% for p in papers %}{% if p.status == 'finished' and p.score is not none %}
+    {name:'第{{ p.id }}场', score:{{ p.score }}},
+    {% endif %}{% endfor %}
+  ].reverse();
+  var weakData = [
+    {% for w in weak %}
+    {name:{{ (w.stem or '')[:18]|tojson }}, cnt:{{ w.wrong_count }}},
+    {% endfor %}
+  ].reverse();
+  var charts = [];
+
+  // 1. 练习正确率仪表盘
+  var c1 = echarts.init(document.getElementById('chart-myacc'));
+  charts.push(c1);
+  c1.setOption({
+    series:[{
+      type:'gauge', startAngle:210, endAngle:-30, min:0, max:100,
+      progress:{show:true, width:14, itemStyle:{color: myAcc>=80?'#16a34a':(myAcc>=60?'#f59e0b':'#dc2626')}},
+      axisLine:{lineStyle:{width:14, color:[[1,'#e5e7eb']]}},
+      axisTick:{show:false}, splitLine:{length:10, lineStyle:{color:'#999'}},
+      axisLabel:{distance:20, fontSize:10}, pointer:{width:4},
+      detail:{formatter:'{value}%', fontSize:24, offsetCenter:[0,'70%'], color:'#1f2937'},
+      data:[{value:myAcc}]
+    }]
+  });
+
+  // 2. 考试成绩走势折线
+  var el2 = document.getElementById('chart-myscore');
+  if (finishedPapers.length) {
+    var c2 = echarts.init(el2); charts.push(c2);
+    c2.setOption({
+      tooltip:{trigger:'axis', formatter:function(p){return p[0].name+'<br/>得分：'+p[0].value+' 分';}},
+      grid:{left:40, right:20, top:20, bottom:30},
+      xAxis:{type:'category', data:finishedPapers.map(function(d){return d.name;})},
+      yAxis:{type:'value', min:0, max:100},
+      series:[{type:'line', smooth:true, data:finishedPapers.map(function(d){return d.score;}),
+        itemStyle:{color:'#2563eb'}, lineStyle:{width:3}, symbolSize:8,
+        areaStyle:{color:'rgba(37,99,235,0.12)'},
+        markLine:{silent:true, data:[{yAxis:90, label:{formatter:'优秀线90'}, lineStyle:{color:'#16a34a', type:'dashed'}}]}
+      }]
+    });
+  } else { el2.innerHTML = '<p class="muted" style="text-align:center;line-height:220px;">暂无已完成的考试</p>'; }
+
+  // 3. 易错题条形图
+  if (weakData.length) {
+    var c3 = echarts.init(document.getElementById('chart-myweak'));
+    charts.push(c3);
+    c3.setOption({
+      tooltip:{trigger:'axis', formatter:'{b}…<br/>错误 {c} 次'},
+      grid:{left:10, right:40, top:10, bottom:20, containLabel:true},
+      xAxis:{type:'value', minInterval:1},
+      yAxis:{type:'category', data:weakData.map(function(d){return d.name;}),
+             axisLabel:{width:140, overflow:'truncate', fontSize:11}},
+      series:[{type:'bar',
+        data:weakData.map(function(d){return {value:d.cnt, itemStyle:{color:'#dc2626', borderRadius:[0,4,4,0]}};}),
+        label:{show:true, position:'right', formatter:'{c}次', fontSize:11}}]
+    });
+  }
+
+  window.addEventListener('resize', function(){ charts.forEach(function(c){c.resize();}); });
+})();
+</script>
 {% endblock %}

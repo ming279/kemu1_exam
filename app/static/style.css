@@ -38,6 +38,13 @@ th { background:#f3f4f6; }
 .score { font-size:42px; font-weight:800; text-align:center; margin:10px 0; }
 .grid { display:grid; grid-template-columns:repeat(4,1fr); gap:14px; }
 .grid .num { font-size:26px; font-weight:700; color:var(--brand); }
+
+/* ---- 图表卡片（ECharts）---- */
+.chart-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin-bottom:16px; }
+.chart-card { margin-bottom:0; }
+.chart-card h3 { margin:0 0 8px; font-size:15px; }
+.chart-grid .chart-card { margin-bottom:16px; }
+@media (max-width:900px) { .chart-grid { grid-template-columns:1fr; } }
 .auth { max-width:380px; margin:60px auto; }
 input[type=text], input[type=password] { width:100%; padding:9px 12px; border:1px solid var(--line); border-radius:8px; margin:6px 0 14px; }
 .feedback { padding:10px 14px; border-radius:8px; margin:12px 0; }

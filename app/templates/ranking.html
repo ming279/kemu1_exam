@@ -12,6 +12,17 @@
 </div>
 {% endif %}
 
+<div class="chart-grid">
+  <div class="card chart-card" style="grid-column: span 2;">
+    <h3>全体考试成绩分段分布</h3>
+    <div id="chart-seg" style="height:280px;"></div>
+  </div>
+  <div class="card chart-card">
+    <h3>全体 PK 胜负占比</h3>
+    <div id="chart-pk" style="height:280px;"></div>
+  </div>
+</div>
+
 <div class="card">
   <h3>📝 考试排名（按平均分）</h3>
   {% if not exam_rank %}
@@ -81,4 +92,52 @@
   段位规则：🥉青铜（0-4胜）｜🥈白银（5-14胜）｜🥇黄金（15-29胜）｜💎铂金（30+胜）
   ｜ 连胜3场以上显示 🔥
 </p>
+
+<script src="{{ url_for('static', filename='echarts.min.js') }}"></script>
+<script>
+(function(){
+  var seg = {{ charts.seg|safe }};
+  var pk = {{ charts.pk|safe }};
+  var segColors = ['#dc2626','#f59e0b','#3b82f6','#0891b2','#16a34a'];
+
+  // 1. 分数段分布：渐变柱状图
+  var c1 = echarts.init(document.getElementById('chart-seg'));
+  c1.setOption({
+    tooltip:{trigger:'axis', axisPointer:{type:'shadow'}, formatter:'{b}：{c} 场'},
+    grid:{left:40, right:20, top:20, bottom:30},
+    xAxis:{type:'category', data:seg.names},
+    yAxis:{type:'value', minInterval:1},
+    series:[{
+      type:'bar', barWidth:'50%',
+      data: seg.values.map(function(v,i){
+        return {value:v, itemStyle:{
+          borderRadius:[6,6,0,0],
+          color: new echarts.graphic.LinearGradient(0,0,0,1,[
+            {offset:0, color:segColors[i]}, {offset:1, color:segColors[i]+'55'}])
+        }};
+      }),
+      label:{show:true, position:'top', fontSize:13, fontWeight:'bold'}
+    }]
+  });
+
+  // 2. PK 胜负饼图
+  var c2 = echarts.init(document.getElementById('chart-pk'));
+  var hasPk = pk.some(function(d){return d.value>0;});
+  if (hasPk) {
+    c2.setOption({
+      tooltip:{trigger:'item', formatter:'{b}：{c} 场（{d}%）'},
+      legend:{bottom:0},
+      color:['#16a34a','#94a3b8'],
+      series:[{type:'pie', radius:['40%','66%'],
+        itemStyle:{borderRadius:8, borderColor:'#fff', borderWidth:2},
+        label:{formatter:'{b}\n{c}场'}, data:pk}]
+    });
+  } else {
+    document.getElementById('chart-pk').innerHTML =
+      '<p class="muted" style="text-align:center;line-height:240px;">暂无 PK 对战记录</p>';
+  }
+
+  window.addEventListener('resize', function(){ c1.resize(); c2.resize(); });
+})();
+</script>
 {% endblock %}

@@ -16,6 +16,27 @@
   <a href="{{ url_for('admin_wrong_rank') }}" class="btn">重置</a>
 </form>
 
+{% if rows %}
+<div class="chart-grid">
+  <div class="card chart-card" style="grid-column: span 2;">
+    <h3>TOP10 错题错误率</h3>
+    <div id="chart-top10" class="chart-box" style="height:340px;"></div>
+  </div>
+  <div class="card chart-card">
+    <h3>题型错次分布（玫瑰图）</h3>
+    <div id="chart-qtype" class="chart-box" style="height:340px;"></div>
+  </div>
+  <div class="card chart-card">
+    <h3>常见错误答案占比</h3>
+    <div id="chart-answers" class="chart-box" style="height:300px;"></div>
+  </div>
+  <div class="card chart-card" style="grid-column: span 2;">
+    <h3>错题错误率区间分布</h3>
+    <div id="chart-rates" class="chart-box" style="height:300px;"></div>
+  </div>
+</div>
+{% endif %}
+
 {% if not rows %}
 <div class="card">
   <p class="muted">暂无错题数据{{ '（该任务）' if task_filter else '，学生答题后将自动统计' }}。</p>
@@ -44,5 +65,78 @@
   {% endfor %}
 </table>
 <p class="muted">共 {{ rows|length }} 道错题（最多显示 50 道，按错误次数降序）</p>
+{% endif %}
+
+{% if rows %}
+<script src="{{ url_for('static', filename='echarts.min.js') }}"></script>
+<script>
+(function(){
+  var top10 = {{ charts.top10|safe }};
+  var qtype = {{ charts.qtype|safe }};
+  var answers = {{ charts.answers|safe }};
+  var rates = {{ charts.rates|safe }};
+  var palette = ['#2563eb','#dc2626','#f59e0b','#16a34a','#8b5cf6','#ec4899','#0891b2','#64748b'];
+
+  // 1. TOP10 错误率横向条形图
+  var c1 = echarts.init(document.getElementById('chart-top10'));
+  c1.setOption({
+    tooltip: {trigger:'axis', formatter: function(p){ return p[0].name + '<br/>错误率：'+p[0].value+'%<br/>错次：'+top10[p[0].dataIndex].cnt+' 次'; }},
+    grid: {left:10, right:40, top:10, bottom:20, containLabel:true},
+    xAxis: {type:'value', max:100, axisLabel:{formatter:'{value}%'}},
+    yAxis: {type:'category', data: top10.map(function(d){return d.name;}).reverse(),
+            axisLabel:{width:120, overflow:'truncate', fontSize:11}},
+    series: [{
+      type:'bar', data: top10.map(function(d){return d.rate;}).reverse(),
+      itemStyle:{color: function(p){return p.value>=70?'#dc2626':(p.value>=40?'#f59e0b':'#2563eb');},
+                 borderRadius:[0,4,4,0]},
+      label:{show:true, position:'right', formatter:'{c}%', fontSize:11}
+    }]
+  });
+
+  // 2. 题型错次南丁格尔玫瑰图
+  var c2 = echarts.init(document.getElementById('chart-qtype'));
+  c2.setOption({
+    tooltip:{trigger:'item', formatter:'{b}：{c} 次（{d}%）'},
+    legend:{bottom:0},
+    color: palette,
+    series:[{
+      type:'pie', radius:['25%','70%'], roseType:'area',
+      itemStyle:{borderRadius:6, borderColor:'#fff', borderWidth:2},
+      label:{formatter:'{b}\n{c}次'},
+      data: qtype
+    }]
+  });
+
+  // 3. 常见错误答案环形图
+  var c3 = echarts.init(document.getElementById('chart-answers'));
+  c3.setOption({
+    tooltip:{trigger:'item', formatter:'答案 {b}：{c} 次（{d}%）'},
+    legend:{bottom:0, type:'scroll'},
+    color: palette,
+    series:[{
+      type:'pie', radius:['40%','68%'],
+      itemStyle:{borderRadius:8, borderColor:'#fff', borderWidth:2},
+      label:{formatter:'{b}\n{d}%'},
+      data: answers
+    }]
+  });
+
+  // 4. 错误率区间分布饼图
+  var c4 = echarts.init(document.getElementById('chart-rates'));
+  c4.setOption({
+    tooltip:{trigger:'item', formatter:'{b}：{c} 题（{d}%）'},
+    legend:{bottom:0},
+    color:['#dc2626','#f59e0b','#16a34a'],
+    series:[{
+      type:'pie', radius:'65%',
+      itemStyle:{borderRadius:6, borderColor:'#fff', borderWidth:2},
+      label:{formatter:'{b}\n{c}题'},
+      data: rates
+    }]
+  });
+
+  window.addEventListener('resize', function(){ c1.resize(); c2.resize(); c3.resize(); c4.resize(); });
+})();
+</script>
 {% endif %}
 {% endblock %}
