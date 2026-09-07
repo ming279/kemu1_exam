@@ -39,5 +39,10 @@
     </div>
   {% endfor %}
   <div class="muted">你的答案：{{ q.user_answer or '未作答' }}｜正确答案：{{ correct_labels }}</div>
+  {% if q.explanation %}
+  <div class="explanation"><b>答案解析：</b>{{ q.explanation }}</div>
+  {% else %}
+  <div class="muted explanation-none">暂无解析</div>
+  {% endif %}
 </div>
 {% endmacro %}

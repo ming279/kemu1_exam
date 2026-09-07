@@ -1,0 +1,71 @@
+{% extends 'base.html' %}
+{% block title %}PK 大厅{% endblock %}
+{% block content %}
+<h1>⚔️ PK 竞速大厅</h1>
+
+<div class="card" style="background:linear-gradient(135deg,#f0f7ff,#fef3c7);">
+  <h3>我的战绩</h3>
+  <div class="grid" style="grid-template-columns:repeat(4,1fr);">
+    <div><div class="num">{{ badge[0] }} {{ badge[1] }}</div>当前段位</div>
+    <div><div class="num tag-ok">{{ my_stat.pk_wins or 0 }}</div>胜场</div>
+    <div><div class="num tag-bad">{{ my_stat.pk_losses or 0 }}</div>负场</div>
+    <div><div class="num" style="color:#f59e0b">{{ my_stat.win_streak or 0 }} 🔥</div>当前连胜</div>
+  </div>
+</div>
+
+<div class="card">
+  <h3>选择对手发起挑战</h3>
+  <p class="muted">选择一名同学发起 10 题判断题竞速 PK，同题同步、抢答得分，小车冲线决胜负！</p>
+  {% if not students %}
+  <p class="muted">暂无可挑战的同学（需要其他学生注册）。</p>
+  {% else %}
+  <table>
+    <tr><th>账号</th><th>姓名</th><th>段位</th><th>胜/负</th><th>连胜</th><th>操作</th></tr>
+    {% for s in students %}
+    <tr>
+      <td>{{ s.username }}</td>
+      <td>{{ s.real_name or '—' }}</td>
+      <td>
+        {% if s.pk_wins >= 30 %}💎铂金
+        {% elif s.pk_wins >= 15 %}🥇黄金
+        {% elif s.pk_wins >= 5 %}🥈白银
+        {% else %}🥉青铜{% endif %}
+      </td>
+      <td>{{ s.pk_wins or 0 }} / {{ s.pk_losses or 0 }}</td>
+      <td>{% if s.win_streak >= 3 %}🔥{{ s.win_streak }}{% else %}—{% endif %}</td>
+      <td>
+        <form method="post" action="{{ url_for('pk_challenge') }}" class="inline">
+          <input type="hidden" name="opponent" value="{{ s.id }}">
+          <button type="submit" class="btn small"
+                  onclick="return confirm('向 {{ s.username }} 发起 PK 挑战？')">发起挑战</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h3>最近对战记录</h3>
+  {% if not records %}
+  <p class="muted">暂无对战记录，快去发起挑战吧！</p>
+  {% else %}
+  <table>
+    <tr><th>对战</th><th>比分</th><th>结果</th><th>时间</th></tr>
+    {% for r in records %}
+    <tr>
+      <td>{{ r.c_name }} VS {{ r.o_name }}</td>
+      <td>{{ r.challenger_score or 0 }} : {{ r.opponent_score or 0 }}</td>
+      <td>
+        {% if r.winner_uid == me.id %}<span class="tag-ok">胜利 🎉</span>
+        {% elif r.winner_uid %}<span class="tag-bad">惜败</span>
+        {% else %}<span class="muted">平局</span>{% endif %}
+      </td>
+      <td>{{ r.finished_at or r.created_at }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+</div>
+{% endblock %}

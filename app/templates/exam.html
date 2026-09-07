@@ -2,10 +2,30 @@
 {% from '_macros.html' import render_question with context %}
 {% block content %}
 {% set total = judges|length + singles|length %}
+{% set is_task = task is not none %}
 <div class="exam-layout">
   <aside class="answer-card">
     <h3>答题卡</h3>
     <div class="muted">已答 <b id="ac-count">0</b> / {{ total }} 题</div>
+
+    {% if is_task and remain_sec is not none and remain_sec > 0 %}
+    <div id="countdown-box" class="countdown-box">
+      <div class="muted">剩余时间</div>
+      <div id="countdown" class="countdown-num">--:--:--</div>
+    </div>
+    {% endif %}
+
+    {% if is_practice %}
+    <div id="practice-timer" class="practice-timer">
+      <div class="muted">已用时间</div>
+      <div id="elapsed-display" class="countdown-num">00:00:00</div>
+      <div id="practice-controls" class="practice-controls">
+        <button type="button" class="btn small" id="btn-pause">暂停</button>
+        <button type="button" class="btn small secondary" id="btn-resume" style="display:none">继续</button>
+      </div>
+      <div id="pause-hint" class="muted" style="display:none">已暂停，点击继续开始计时</div>
+    </div>
+    {% endif %}
 
     <div class="ac-section-title">判断题（1-{{ judges|length }}）</div>
     <div class="ac-grid">
@@ -29,8 +49,12 @@
   </aside>
 
   <div class="exam-questions">
-    <h2>模拟考试（第 {{ pid }} 卷）</h2>
-    <p class="muted">共 {{ total }} 题：判断题 {{ judges|length }} 题 + 选择题 {{ singles|length }} 题，全部作答后点击交卷。</p>
+    <h2>{{ task.title if is_task else '模拟考试' }}（第 {{ pid }} 卷）</h2>
+    <p class="muted">
+      共 {{ total }} 题：判断题 {{ judges|length }} 题 + 选择题 {{ singles|length }} 题
+      {% if is_task %}｜ 模式：{{ '考试' if task.mode == 'exam' else '练习' }}
+      {% if task.time_limit_sec %}｜ 时限：{{ task.time_limit_sec // 60 }} 分钟{% endif %}{% endif %}
+    </p>
     <form id="examForm" method="post" action="{{ url_for('exam_submit', pid=pid) }}">
       <h3 class="section-head">第一部分 · 判断题（{{ judges|length }} 题）</h3>
       {% for q in judges %}
@@ -81,6 +105,82 @@
   document.querySelectorAll('input[type=radio]:checked, input[type=checkbox]:checked')
     .forEach(function (inp) { markAnswered(inp, true); });
   refreshCount();
+
+  // ---- 考试模式倒计时 ----
+  var remain = {{ remain_sec if remain_sec is not none else 'null' }};
+  var taskId = {{ task.id if is_task else 'null' }};
+  if (remain !== null && remain > 0) {
+    var cdEl = document.getElementById('countdown');
+    var timer = setInterval(function() {
+      remain--;
+      if (remain <= 0) {
+        clearInterval(timer);
+        cdEl.textContent = '00:00:00';
+        cdEl.style.color = '#dc2626';
+        alert('时间到，自动交卷！');
+        document.getElementById('examForm').submit();
+        return;
+      }
+      var h = Math.floor(remain / 3600);
+      var m = Math.floor((remain % 3600) / 60);
+      var s = remain % 60;
+      cdEl.textContent =
+        (h < 10 ? '0' : '') + h + ':' +
+        (m < 10 ? '0' : '') + m + ':' +
+        (s < 10 ? '0' : '') + s;
+      // 剩余 < 60 秒变红
+      if (remain <= 60) cdEl.style.color = '#dc2626';
+      else if (remain <= 300) cdEl.style.color = '#f59e0b';
+    }, 1000);
+  }
+
+  // ---- 练习模式计时（后端记录，前端轮询） ----
+  {% if is_practice %}
+  var elEl = document.getElementById('elapsed-display');
+  var btnPause = document.getElementById('btn-pause');
+  var btnResume = document.getElementById('btn-resume');
+  var hintEl = document.getElementById('pause-hint');
+
+  function fmt(sec) {
+    var h = Math.floor(sec / 3600);
+    var m = Math.floor((sec % 3600) / 60);
+    var s = sec % 60;
+    return (h < 10 ? '0' : '') + h + ':' +
+           (m < 10 ? '0' : '') + m + ':' +
+           (s < 10 ? '0' : '') + s;
+  }
+
+  function pollStatus() {
+    fetch('/task/' + taskId + '/status').then(function(r) { return r.json(); })
+      .then(function(d) {
+        if (d.ok) {
+          elEl.textContent = fmt(d.elapsed || 0);
+          if (d.paused) {
+            btnPause.style.display = 'none';
+            btnResume.style.display = '';
+            hintEl.style.display = '';
+          } else {
+            btnPause.style.display = '';
+            btnResume.style.display = 'none';
+            hintEl.style.display = 'none';
+          }
+        }
+      });
+  }
+  pollStatus();
+  setInterval(pollStatus, 5000);  // 每5秒轮询同步
+
+  btnPause.addEventListener('click', function() {
+    fetch('/task/' + taskId + '/pause', {method: 'POST'})
+      .then(function(r) { return r.json(); })
+      .then(function(d) { if (d.ok) pollStatus(); });
+  });
+  btnResume.addEventListener('click', function() {
+    fetch('/task/' + taskId + '/resume', {method: 'POST'})
+      .then(function(r) { return r.json(); })
+      .then(function(d) { if (d.ok) pollStatus(); });
+  });
+  {% endif %}
 })();
 </script>
 {% endblock %}

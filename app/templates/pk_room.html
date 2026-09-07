@@ -1,0 +1,335 @@
+{% extends 'base.html' %}
+{% block title %}PK 竞速{% endblock %}
+{% block content %}
+<style>
+.pk-wrap { display:flex; gap:16px; align-items:stretch; margin-top:12px; }
+.pk-track { flex:0 0 40%; background:linear-gradient(180deg,#1e293b,#334155); border-radius:12px; padding:16px; position:relative; min-height:520px; color:#fff; overflow:hidden; }
+.pk-question { flex:1; min-width:0; }
+.finish-line { position:absolute; top:38px; left:0; right:0; height:6px; background:repeating-linear-gradient(45deg,#fff 0 12px,#111 12px 24px); }
+.finish-flag { position:absolute; top:14px; left:50%; transform:translateX(-50%); font-size:28px; }
+.lane { position:absolute; width:44%; top:60px; bottom:24px; }
+.lane-me { left:4%; }
+.lane-opp { right:4%; }
+.lane-label { text-align:center; font-size:13px; margin-bottom:6px; font-weight:700; }
+.car { position:absolute; left:50%; transform:translateX(-50%); font-size:36px; transition:bottom 0.6s cubic-bezier(.25,.8,.3,1); bottom:0; }
+.lane-track-bg { position:absolute; inset:24px 0 0; border-left:2px dashed rgba(255,255,255,.25); border-right:2px dashed rgba(255,255,255,.25); }
+.score-bar { position:absolute; top:60px; left:0; right:0; text-align:center; font-size:22px; font-weight:800; z-index:5; }
+.q-timer { font-size:28px; font-weight:800; }
+.q-timer.warn { color:#f59e0b; }
+.q-timer.danger { color:#dc2626; }
+.opt-btn { display:block; width:100%; text-align:left; margin:8px 0; padding:12px 16px; border:2px solid var(--line); border-radius:8px; background:#fff; cursor:pointer; font-size:15px; }
+.opt-btn:hover:not(:disabled) { border-color:var(--brand); background:#f0f7ff; }
+.opt-btn:disabled { cursor:not-allowed; opacity:.6; }
+.opt-btn.correct { border-color:var(--ok); background:#dcfce7; }
+.opt-btn.wrong { border-color:var(--bad); background:#fee2e2; }
+.opt-btn.locked { opacity:.4; }
+.emoji-bar { display:flex; gap:8px; margin-top:16px; }
+.emoji-btn { font-size:22px; background:none; border:1px solid var(--line); border-radius:50%; width:44px; height:44px; cursor:pointer; }
+.emoji-btn:hover { transform:scale(1.15); }
+.emoji-pop { position:fixed; font-size:36px; pointer-events:none; z-index:200; animation:emojiFly 1.2s ease-out forwards; }
+@keyframes emojiFly { 0%{opacity:1; transform:translateY(0) scale(.5);} 100%{opacity:0; transform:translateY(-120px) scale(1.4);} }
+.feedback-pop { position:fixed; top:40%; left:50%; transform:translate(-50%,-50%); font-size:80px; font-weight:900; pointer-events:none; z-index:200; animation:popIn .8s ease-out forwards; }
+@keyframes popIn { 0%{opacity:0; transform:translate(-50%,-50%) scale(.3);} 40%{opacity:1; transform:translate(-50%,-50%) scale(1.2);} 100%{opacity:0; transform:translate(-50%,-50%) scale(1);} }
+.countdown-big { position:fixed; inset:0; background:rgba(0,0,0,.75); display:flex; align-items:center; justify-content:center; z-index:300; }
+.countdown-big span { font-size:160px; font-weight:900; color:#fbbf24; animation:cdPulse 1s ease-out; }
+@keyframes cdPulse { 0%{transform:scale(.3); opacity:0;} 50%{transform:scale(1.1); opacity:1;} 100%{transform:scale(1); opacity:1;} }
+.firework { position:fixed; width:8px; height:8px; border-radius:50%; pointer-events:none; z-index:250; }
+.shake { animation:shake .4s; }
+@keyframes shake { 0%,100%{transform:translateX(0);} 25%{transform:translateX(-8px);} 75%{transform:translateX(8px);} }
+.flash-green { animation:flashG .5s; }
+@keyframes flashG { 0%{background:#dcfce7;} 100%{background:transparent;} }
+</style>
+
+<div class="pk-wrap">
+  <!-- 左侧：竖向赛道 40% -->
+  <div class="pk-track" id="pk-track">
+    <div class="finish-flag">🏁</div>
+    <div class="finish-line"></div>
+    <div class="score-bar">
+      <span id="score-me">0</span> : <span id="score-opp">0</span>
+    </div>
+    <div class="lane lane-me">
+      <div class="lane-label">🚗 {{ my_name }}{% if my_streak >= 3 %} 🔥{% endif %}</div>
+      <div class="lane-track-bg"></div>
+      <div class="car" id="car-me">🚗</div>
+    </div>
+    <div class="lane lane-opp">
+      <div class="lane-label">🚙 {{ opp_name }}{% if opp_streak >= 3 %} 🔥{% endif %}</div>
+      <div class="lane-track-bg"></div>
+      <div class="car" id="car-opp">🚙</div>
+    </div>
+  </div>
+
+  <!-- 右侧：题目 60% -->
+  <div class="pk-question">
+    <!-- 等待/准备阶段 -->
+    <div class="card" id="ready-panel">
+      <h2>⚔️ {{ my_name }} VS {{ opp_name }}</h2>
+      <p class="muted">10 道判断题同题竞速，答对一题小车前进 10%，先答对锁定该题！每题 {{ q_time }} 秒。</p>
+      <div id="ready-status" class="muted">等待对方加入房间…</div>
+      <div style="margin-top:16px;">
+        <button class="btn" id="btn-ready" style="font-size:18px; padding:12px 32px;">我准备好了</button>
+      </div>
+    </div>
+
+    <!-- 答题阶段 -->
+    <div class="card" id="play-panel" style="display:none;">
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <h3 style="margin:0;">第 <span id="q-idx">1</span> / 10 题</h3>
+        <div class="q-timer" id="q-timer">{{ q_time }}</div>
+      </div>
+      <div style="margin:16px 0; font-size:17px; font-weight:600;" id="q-stem"></div>
+      <div id="q-options"></div>
+      <div class="emoji-bar">
+        <button class="emoji-btn" data-e="😊">😊</button>
+        <button class="emoji-btn" data-e="😂">😂</button>
+        <button class="emoji-btn" data-e="😤">😤</button>
+        <button class="emoji-btn" data-e="👍">👍</button>
+        <button class="emoji-btn" data-e="🎉">🎉</button>
+      </div>
+    </div>
+
+    <!-- 结果阶段 -->
+    <div class="card" id="result-panel" style="display:none; text-align:center;">
+      <h2 id="result-title"></h2>
+      <div style="font-size:48px; font-weight:900; margin:20px 0;">
+        <span id="result-score-me">0</span> : <span id="result-score-opp">0</span>
+      </div>
+      <p class="muted" id="result-detail"></p>
+      <a href="{{ url_for('pk_lobby') }}" class="btn">返回大厅</a>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.min.js"></script>
+<script>
+var PID = {{ pid }};
+var MY_UID = {{ session['uid'] }};
+var Q_TIME = {{ q_time }};
+var socket = io();
+var myAnswered = false;
+var timerHandle = null;
+
+// 加入房间
+socket.on('connect', function() { socket.emit('pk_join', {pid: PID}); });
+
+socket.on('room_state', function(d) {
+  var readyCount = d.players.filter(function(p){return p.ready;}).length;
+  document.getElementById('ready-status').textContent =
+    '准备状态：' + readyCount + '/2 人已准备';
+});
+
+socket.on('player_ready', function(d) {
+  var el = document.getElementById('ready-status');
+  el.textContent = '对方已准备，等你点准备！';
+});
+
+document.getElementById('btn-ready').addEventListener('click', function() {
+  socket.emit('pk_ready', {pid: PID});
+  this.disabled = true;
+  this.textContent = '已准备，等待对方…';
+  document.getElementById('ready-status').textContent = '你已准备，等待对方…';
+});
+
+// 3-2-1 倒计时
+socket.on('start_countdown', function() {
+  document.getElementById('ready-panel').style.display = 'none';
+});
+socket.on('countdown', function(d) {
+  showBig(d.n);
+});
+socket.on('go', function() {
+  showBig('GO!');
+  setTimeout(function(){
+    var el = document.querySelector('.countdown-big');
+    if (el) el.remove();
+    document.getElementById('play-panel').style.display = 'block';
+  }, 800);
+});
+
+function showBig(text) {
+  var old = document.querySelector('.countdown-big');
+  if (old) old.remove();
+  var div = document.createElement('div');
+  div.className = 'countdown-big';
+  div.innerHTML = '<span>' + text + '</span>';
+  document.body.appendChild(div);
+}
+
+// 下一题
+socket.on('next_question', function(d) {
+  myAnswered = false;
+  document.getElementById('q-idx').textContent = d.idx + 1;
+  document.getElementById('q-stem').textContent = d.stem;
+  var box = document.getElementById('q-options');
+  box.innerHTML = '';
+  d.options.forEach(function(o) {
+    var btn = document.createElement('button');
+    btn.className = 'opt-btn';
+    btn.textContent = o.label + '、' + o.content;
+    btn.onclick = function() { submitAnswer(d.idx, o.label, btn); };
+    box.appendChild(btn);
+  });
+  updateScores(d.scores);
+  // 倒计时
+  var remain = Q_TIME;
+  var timerEl = document.getElementById('q-timer');
+  timerEl.textContent = remain;
+  timerEl.className = 'q-timer';
+  clearInterval(timerHandle);
+  timerHandle = setInterval(function() {
+    remain--;
+    timerEl.textContent = remain;
+    if (remain <= 5) timerEl.className = 'q-timer danger';
+    else if (remain <= 10) timerEl.className = 'q-timer warn';
+    if (remain <= 0) clearInterval(timerHandle);
+  }, 1000);
+});
+
+function submitAnswer(idx, label, btn) {
+  if (myAnswered) return;
+  myAnswered = true;
+  socket.emit('pk_answer', {pid: PID, idx: idx, answer: label});
+  // 禁用所有按钮
+  document.querySelectorAll('.opt-btn').forEach(function(b){ b.disabled = true; });
+}
+
+// 答题结果
+socket.on('answer_result', function(d) {
+  var btns = document.querySelectorAll('.opt-btn');
+  if (d.uid === MY_UID) {
+    // 自己的结果
+    btns.forEach(function(b) {
+      if (d.correct && b.textContent.charAt(0) === d.answer) b.classList.add('correct');
+      if (!d.correct && b.textContent.charAt(0) === d.answer) b.classList.add('wrong');
+    });
+    if (d.correct) {
+      popFeedback('✓', '#16a34a');
+      moveCar('me', d.scores[MY_UID]);
+    } else {
+      popFeedback('✗', '#dc2626');
+      document.getElementById('play-panel').classList.add('shake');
+      setTimeout(function(){ document.getElementById('play-panel').classList.remove('shake'); }, 400);
+    }
+  }
+  // 对方答对 -> 锁定，自己不能再答
+  if (d.locked && d.uid !== MY_UID) {
+    myAnswered = true;
+    btns.forEach(function(b){ b.disabled = true; b.classList.add('locked'); });
+    moveCar('opp', d.scores[Object.keys(d.scores).filter(function(k){return k != MY_UID;})[0]]);
+  }
+  updateScores(d.scores);
+});
+
+// 对方答错（自己还可以答）
+socket.on('opponent_wrong', function(d) {
+  // 可选提示：对方答错了
+});
+
+// 题目超时公布答案
+socket.on('question_timeout', function(d) {
+  clearInterval(timerHandle);
+  document.querySelectorAll('.opt-btn').forEach(function(b) {
+    if (b.textContent.charAt(0) === d.correct) b.classList.add('correct');
+    b.disabled = true;
+  });
+});
+
+function updateScores(scores) {
+  var keys = Object.keys(scores);
+  var myScore = scores[MY_UID] || 0;
+  var oppScore = scores[keys.find(function(k){return k != MY_UID;})] || 0;
+  document.getElementById('score-me').textContent = myScore;
+  document.getElementById('score-opp').textContent = oppScore;
+}
+
+function moveCar(who, score) {
+  var pct = Math.min(score / 10 * 90, 90);
+  var car = document.getElementById(who === 'me' ? 'car-me' : 'car-opp');
+  car.style.bottom = pct + '%';
+  // 最后一题冲刺加速
+  if (score >= 10) car.style.transition = 'bottom 0.3s ease-in';
+}
+
+function popFeedback(text, color) {
+  var div = document.createElement('div');
+  div.className = 'feedback-pop';
+  div.textContent = text;
+  div.style.color = color;
+  document.body.appendChild(div);
+  setTimeout(function(){ div.remove(); }, 800);
+}
+
+// 表情包
+document.querySelectorAll('.emoji-btn').forEach(function(b) {
+  b.addEventListener('click', function() {
+    var e = this.dataset.e;
+    socket.emit('pk_emoji', {pid: PID, emoji: e});
+    showEmoji(e, true);
+  });
+});
+socket.on('emoji', function(d) { showEmoji(d.emoji, false); });
+function showEmoji(e, mine) {
+  var div = document.createElement('div');
+  div.className = 'emoji-pop';
+  div.textContent = e;
+  div.style.right = mine ? '20px' : 'auto';
+  div.style.left = mine ? 'auto' : '45%';
+  div.style.bottom = '30%';
+  document.body.appendChild(div);
+  setTimeout(function(){ div.remove(); }, 1200);
+}
+
+// 游戏结束
+socket.on('game_over', function(d) {
+  clearInterval(timerHandle);
+  document.getElementById('play-panel').style.display = 'none';
+  document.getElementById('result-panel').style.display = 'block';
+  var myScore = d.scores[MY_UID] || 0;
+  var oppUid = d.challenger == MY_UID ? d.opponent : d.challenger;
+  var oppScore = d.scores[oppUid] || 0;
+  document.getElementById('result-score-me').textContent = myScore;
+  document.getElementById('result-score-opp').textContent = oppScore;
+  var title = document.getElementById('result-title');
+  if (d.winner === MY_UID) {
+    title.innerHTML = '🎉 胜利！';
+    title.style.color = '#16a34a';
+    launchFireworks();
+  } else if (d.winner) {
+    title.innerHTML = '😢 惜败';
+    title.style.color = '#dc2626';
+  } else {
+    title.innerHTML = '🤝 平局';
+  }
+  document.getElementById('result-detail').textContent =
+    '你答对 ' + myScore + ' 题，对手答对 ' + oppScore + ' 题';
+  // 车冲线
+  moveCar('me', 10);
+  moveCar('opp', 10);
+});
+
+// 对方掉线
+socket.on('opponent_left', function() {
+  alert('对方已离开房间');
+});
+
+// 烟花
+function launchFireworks() {
+  var colors = ['#fbbf24','#ef4444','#3b82f6','#10b981','#ec4899'];
+  for (var i = 0; i < 40; i++) {
+    (function(i) {
+      setTimeout(function() {
+        var f = document.createElement('div');
+        f.className = 'firework';
+        f.style.background = colors[i % colors.length];
+        f.style.left = (Math.random() * 100) + '%';
+        f.style.top = (Math.random() * 60 + 10) + '%';
+        f.style.transform = 'scale(' + (Math.random() * 2 + 1) + ')';
+        document.body.appendChild(f);
+        setTimeout(function(){ f.remove(); }, 1000);
+      }, i * 80);
+    })(i);
+  }
+}
+</script>
+{% endblock %}

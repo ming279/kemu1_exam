@@ -359,10 +359,59 @@ def _run(batch_id, mode, source_key, url, year_version):
                 imported, duplicates = dedup_import(cur, items, year_version, batch_id)
         finally:
             conn.close()
+        msg = (f'完成：抓取 {len(items)} 题，去重跳过 {duplicates} 题，'
+               f'新增入库 {imported} 题（year_version={year_version}）')
+        if imported > 0:
+            # 入库后自动对新题归类（复用加分项①分类器，全量重跑保证质心一致）
+            _update_batch(batch_id, status='done',
+                          message=msg + '；正在自动归类…')
+            try:
+                import sys
+                sys.path.insert(0, str(BASE.parent))
+                import classifier
+                classifier.main(DB['password'])
+                msg += '；新题已自动归类'
+            except Exception as ce:
+                msg += f'；自动归类失败（可手动运行 classifier.py）：{ce}'
         _update_batch(batch_id, imported=imported, duplicates=duplicates,
-                      status='done',
-                      message=f'完成：抓取 {len(items)} 题，去重跳过 {duplicates} 题，'
-                              f'新增入库 {imported} 题（year_version={year_version}）')
+                      status='done', message=msg)
     except Exception as e:
         _update_batch(batch_id, status='failed',
                       message='失败：' + ''.join(traceback.format_exception_only(e)).strip())
+
+
+def delete_year(year_version):
+    """删除某采集年份的全部题目及关联数据（2026 原始题库由路由层拦截）。
+    事务执行，返回删除题数（0 表示该年份无数据）。"""
+    conn = pymysql.connect(**dict(DB, autocommit=False))
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT COUNT(*) c FROM question WHERE year_version=%s",
+                        (year_version,))
+            n = cur.fetchone()['c']
+            if n == 0:
+                return 0
+            # 按外键依赖顺序删关联数据（子查询定位该年份题目）
+            for tbl, col in (('ai_verification', 'question_id'),
+                             ('verify_result', 'question_id'),
+                             ('wrong_book', 'question_id'),
+                             ('practice', 'question_id'),
+                             ('exam_detail', 'question_id'),
+                             ('question_image', 'question_id'),
+                             ('`option`', 'question_id')):
+                try:
+                    cur.execute(
+                        f"DELETE FROM {tbl} WHERE {col} IN "
+                        f"(SELECT id FROM question WHERE year_version=%s)",
+                        (year_version,))
+                except pymysql.Error:
+                    pass            # 表无该列等情况跳过
+            cur.execute("DELETE FROM question WHERE year_version=%s", (year_version,))
+            cur.execute("DELETE FROM import_batch WHERE year_version=%s", (year_version,))
+        conn.commit()
+        return n
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()

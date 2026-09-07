@@ -1,0 +1,159 @@
+{% extends 'base.html' %}
+{% block title %}任务管理{% endblock %}
+{% block content %}
+<h1>任务管理</h1>
+
+<div class="card">
+  <h3>发布新任务</h3>
+  <p class="muted">所有学生将做<b>同一套题</b>（预生成固定题目列表）。用途选"考试"可勾选打乱顺序（判断题和单选题各自打乱，不混在一起，选项顺序不打乱）。</p>
+  <form method="post" action="{{ url_for('admin_tasks_create') }}">
+    <table>
+      <tr>
+        <td style="width:120px"><label>任务标题</label></td>
+        <td><input type="text" name="title" placeholder="如：第一单元随堂测验" style="width:400px" required></td>
+      </tr>
+      <tr>
+        <td><label>判断题数量</label></td>
+        <td><input type="number" name="judge_count" value="40" min="0" max="200" style="width:100px"></td>
+      </tr>
+      <tr>
+        <td><label>单选题数量</label></td>
+        <td><input type="number" name="single_count" value="60" min="0" max="200" style="width:100px"></td>
+      </tr>
+      <tr>
+        <td><label>时限（分钟）</label></td>
+        <td><input type="number" name="time_limit" placeholder="留空=不限时" min="1" max="300" style="width:100px">
+          <span class="muted">教师可自由输入分钟数，留空表示不限时</span></td>
+      </tr>
+      <tr>
+        <td><label>模式</label></td>
+        <td>
+          <label><input type="radio" name="mode" value="exam" checked> 考试模式</label>
+          <label><input type="radio" name="mode" value="practice"> 练习模式</label>
+          <span class="muted">考试=强制倒计时到点自动交卷；练习=自主开始/暂停/继续</span>
+        </td>
+      </tr>
+      <tr>
+        <td><label>用途</label></td>
+        <td>
+          <label><input type="radio" name="purpose" value="exam" checked> 考试（防作弊，可打乱）</label>
+          <label><input type="radio" name="purpose" value="review"> 讲解（不打乱，全班一致）</label>
+        </td>
+      </tr>
+      <tr id="shuffle-row">
+        <td><label>打乱顺序</label></td>
+        <td>
+          <label><input type="checkbox" name="shuffle_order"> 勾选后判断题和单选题各自打乱（选项顺序不打乱）</label>
+        </td>
+      </tr>
+      <tr>
+        <td></td>
+        <td><button type="submit" class="btn">发布任务</button></td>
+      </tr>
+    </table>
+  </form>
+</div>
+
+<div class="card">
+  <h3>已发布任务（{{ rows|length }}）</h3>
+  {% if not rows %}
+  <p class="muted">暂无任务，使用上方表单发布第一个任务。</p>
+  {% else %}
+  <table>
+    <tr>
+      <th>ID</th><th>标题</th><th>题型分布</th><th>模式</th><th>用途</th>
+      <th>时限</th><th>打乱</th><th>状态</th><th>参加/完成</th><th>创建时间</th><th>操作</th>
+    </tr>
+    {% for r in rows %}
+    <tr>
+      <td>{{ r.id }}</td>
+      <td><b>{{ r.title }}</b></td>
+      <td>判{{ r.judge_count }}+单{{ r.single_count }}={{ r.judge_count + r.single_count }}</td>
+      <td>{{ '考试' if r.mode == 'exam' else '练习' }}</td>
+      <td>{{ '考试' if r.purpose == 'exam' else '讲解' }}</td>
+      <td>{{ '不限时' if not r.time_limit_sec else (r.time_limit_sec // 60 ~ ' 分钟') }}</td>
+      <td>{{ '是' if r.shuffle_order else '否' }}</td>
+      <td>
+        {% if r.status == 'published' %}<span class="tag-ok">进行中</span>
+        {% elif r.status == 'closed' %}<span class="muted">已关闭</span>
+        {% else %}<span class="muted">{{ r.status }}</span>{% endif %}
+      </td>
+      <td>{{ r.joined }} 人 / {{ r.finished }} 完成</td>
+      <td>{{ r.created_at }}</td>
+      <td>
+        <button class="btn small secondary edit-btn" data-id="{{ r.id }}"
+                data-title="{{ r.title }}"
+                data-min="{{ r.time_limit_sec // 60 if r.time_limit_sec else '' }}">编辑</button>
+        {% if r.status == 'published' %}
+        <form method="post" action="{{ url_for('admin_tasks_close', tid=r.id) }}" class="inline">
+          <button class="btn small" type="submit" onclick="return confirm('确认关闭任务？关闭后学生不能再参加。')">关闭</button>
+        </form>
+        {% elif r.status == 'closed' %}
+        <form method="post" action="{{ url_for('admin_tasks_reopen', tid=r.id) }}" class="inline">
+          <button class="btn small secondary" type="submit">重开</button>
+        </form>
+        {% endif %}
+        <form method="post" action="{{ url_for('admin_tasks_delete', tid=r.id) }}" class="inline">
+          <button class="btn small danger" type="submit"
+                  onclick="return confirm('确认删除任务？已参加的记录也会一并删除，此操作不可恢复。')">删除</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+</div>
+
+<!-- 编辑任务弹窗（只改标题/时限，题目不可改） -->
+<div id="edit-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.4); z-index:99; align-items:center; justify-content:center;">
+  <div class="card" style="max-width:480px; margin:auto;">
+    <h3>编辑任务 #<span id="edit-id"></span></h3>
+    <p class="muted">仅可修改标题和时限，题目内容不可更改。</p>
+    <form method="post" action="" id="edit-form">
+      <table>
+        <tr><td style="width:90px">标题</td>
+          <td><input type="text" name="title" id="edit-title" style="width:100%" required></td></tr>
+        <tr><td>时限(分钟)</td>
+          <td><input type="number" name="time_limit" id="edit-min" min="1" max="300" style="width:100px">
+            <span class="muted">留空=不限时</span></td></tr>
+        <tr><td></td>
+          <td>
+            <button type="submit" class="btn">保存</button>
+            <button type="button" class="btn secondary" onclick="document.getElementById('edit-modal').style.display='none'">取消</button>
+          </td></tr>
+      </table>
+    </form>
+  </div>
+</div>
+
+<script>
+document.querySelectorAll('.edit-btn').forEach(function(btn) {
+  btn.addEventListener('click', function() {
+    var id = this.dataset.id;
+    var title = this.dataset.title;
+    var min = this.dataset.min;
+    document.getElementById('edit-id').textContent = id;
+    document.getElementById('edit-title').value = title;
+    document.getElementById('edit-min').value = min;
+    document.getElementById('edit-form').action = '/admin/tasks/' + id + '/edit';
+    document.getElementById('edit-modal').style.display = 'flex';
+  });
+});
+
+// 用途切换：选"讲解"时隐藏打乱选项（讲解模式不打乱）
+document.querySelectorAll('input[name="purpose"]').forEach(function(r) {
+  r.addEventListener('change', function() {
+    var row = document.getElementById('shuffle-row');
+    var shuffle = row.querySelector('input[type=checkbox]');
+    if (this.value === 'review') {
+      row.style.opacity = '0.4';
+      shuffle.checked = false;
+      shuffle.disabled = true;
+    } else {
+      row.style.opacity = '1';
+      shuffle.disabled = false;
+    }
+  });
+});
+</script>
+{% endblock %}

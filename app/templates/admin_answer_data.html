@@ -1,0 +1,82 @@
+{% extends 'base.html' %}
+{% block title %}答题数据导出{% endblock %}
+{% block content %}
+<h1>答题数据导出</h1>
+<p class="muted">查看学生答题明细，支持 5 种场景导出 CSV/Excel 格式。</p>
+
+<div class="card">
+  <h3>导出面板</h3>
+  <form method="get" action="{{ url_for('admin_answer_data_export') }}" id="export-form">
+    <table>
+      <tr>
+        <td style="width:120px"><b>场景选择</b></td>
+        <td>
+          {% for key, label in scenarios.items() %}
+          <label><input type="radio" name="scenario" value="{{ key }}" {{ 'checked' if key == 'archive' }}>
+            {{ loop.index }}. {{ label }}</label>
+          {% endfor %}
+        </td>
+      </tr>
+      <tr>
+        <td><label>筛选任务</label></td>
+        <td>
+          <select name="task" class="search-input">
+            <option value="">不筛选（全部）</option>
+            {% for t in tasks %}
+            <option value="{{ t.id }}">{{ t.title }}</option>
+            {% endfor %}
+          </select>
+        </td>
+      </tr>
+      <tr>
+        <td><label>筛选学生</label></td>
+        <td>
+          <select name="student" class="search-input">
+            <option value="">不筛选（全部）</option>
+            {% for s in students %}
+            <option value="{{ s.id }}">{{ s.username }}（{{ s.real_name or '未填姓名' }}）</option>
+            {% endfor %}
+          </select>
+        </td>
+      </tr>
+      <tr>
+        <td><b>导出格式</b></td>
+        <td>
+          <button type="submit" class="btn" name="fmt" value="csv">导出 CSV</button>
+          <button type="submit" class="btn secondary" name="fmt" value="excel">导出 Excel</button>
+          <span class="muted">CSV 通用兜底；Excel 带格式（表头加粗、错题标红、列宽自适应）</span>
+        </td>
+      </tr>
+    </table>
+  </form>
+</div>
+
+<div class="card">
+  <h3>数据预览（最近 20 条）</h3>
+  {% if not preview %}
+  <p class="muted">暂无答题数据。</p>
+  {% else %}
+  <table>
+    <tr>
+      <th>提交时间</th><th>账号</th><th>姓名</th><th>任务</th>
+      <th>题号</th><th>题干</th><th>题型</th><th>答案</th><th>对错</th><th>用时</th>
+    </tr>
+    {% for r in preview %}
+    <tr>
+      <td>{{ r.submitted_at }}</td>
+      <td>{{ r.username }}</td>
+      <td>{{ r.real_name or '—' }}</td>
+      <td>{{ r.title or '模拟考试' }}</td>
+      <td>{{ r.id }}</td>
+      <td>{{ r.stem }}…</td>
+      <td>{{ r.qtype }}</td>
+      <td>{{ r.user_answer or '未答' }}</td>
+      <td>{{ '对' if r.is_correct else '错' }}</td>
+      <td>{{ r.elapsed_sec or '—' }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  <p class="muted">仅显示前 20 条，导出可获得全部数据。</p>
+  {% endif %}
+</div>
+{% endblock %}
