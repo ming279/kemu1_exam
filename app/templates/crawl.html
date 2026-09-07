@@ -41,10 +41,70 @@
 <div class="card">
   <h3>各年份版本题量</h3>
   <table>
-    <tr><th>year_version</th><th>题数</th></tr>
-    {% for r in year_dist %}<tr><td>{{ r.year_version }}</td><td>{{ r.cnt }}</td></tr>{% endfor %}
+    <tr><th>year_version</th><th>题数</th><th>操作</th></tr>
+    {% for r in year_dist %}
+    <tr>
+      <td>{{ r.year_version }}</td>
+      <td>{{ r.cnt }}</td>
+      <td>
+        {% if r.year_version == '2026' %}
+        <span class="muted">原始题库（docx 导入），不可删除</span>
+        {% else %}
+        <form method="post" action="{{ url_for('crawl_delete_year', year=r.year_version) }}" class="inline"
+              onsubmit="return confirm('确认删除 {{ r.year_version }} 年版的 {{ r.cnt }} 道题目？\n将同时清除这些题目的考试/练习/错题/AI 验证关联记录，不可恢复！')">
+          <button class="btn danger small" type="submit">删除该年份</button>
+        </form>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
   </table>
 </div>
+
+{% if trend %}
+<div class="card">
+  <h3>历年题库对比趋势分析</h3>
+  <p class="muted">按 question.year_version 实时统计（采集新题后自动更新）；命令行可运行 trend_analysis.py 生成同名 md 报告。</p>
+
+  <h4>一、各年份题量与题型结构</h4>
+  <table>
+    <tr><th>年份版本</th><th>题量</th><th>判断题</th><th>单选题</th><th>多选题</th><th>判断题占比</th></tr>
+    {% for r in trend.qtype_rows %}
+    <tr>
+      <td><b>{{ r.year }}</b></td><td>{{ r.total }}</td>
+      <td>{{ r.judge }}</td><td>{{ r.single }}</td><td>{{ r.multi }}</td>
+      <td>{{ r.judge_pct }}%</td>
+    </tr>
+    {% endfor %}
+  </table>
+
+  <h4>二、知识分类占比对比（按 {{ trend.latest }} 版占比降序）</h4>
+  <table>
+    <tr><th>知识分类</th>{% for y in trend.years %}<th>{{ y }} 年版</th>{% endfor %}</tr>
+    {% for row in trend.cat_rows %}
+    <tr>
+      <td>{{ row.cat }}</td>
+      {% for c in row.cells %}<td>{{ c.n }}（{{ c.pct }}%）</td>{% endfor %}
+    </tr>
+    {% endfor %}
+  </table>
+
+  <h4>三、趋势观察（自动结论）</h4>
+  <ol class="trend-conclusions">
+    {% for c in trend.conclusions %}<li>{{ c }}</li>{% endfor %}
+  </ol>
+
+  {% if trend.growth %}
+  <h4>四、各采集年份典型新增题样例</h4>
+  {% for y in trend.growth %}
+  <p><b>{{ y }} 年版样例：</b></p>
+  <ul class="muted">
+    {% for s in trend.samples[y] %}<li>[{{ s.cat }}] {{ s.stem }}</li>{% endfor %}
+  </ul>
+  {% endfor %}
+  {% endif %}
+</div>
+{% endif %}
 
 <div class="card">
   <h3>采集批次记录（import_batch 表）</h3>

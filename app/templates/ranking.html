@@ -1,0 +1,84 @@
+{% extends 'base.html' %}
+{% block title %}学生排名{% endblock %}
+{% block content %}
+<h1>学生排名</h1>
+<p class="muted">考试排名按平均分降序，练习排名按总正确题数降序。前三名有奖牌，段位徽章根据 PK 胜场评定。</p>
+
+{% if me.role == 'student' %}
+<div class="card" style="background:#f0f7ff;">
+  <b>我的排名：</b>
+  考试第 <b class="tag-ok">{{ my_exam_rank or '—' }}</b> 名 ｜
+  练习第 <b class="tag-ok">{{ my_prac_rank or '—' }}</b> 名
+</div>
+{% endif %}
+
+<div class="card">
+  <h3>📝 考试排名（按平均分）</h3>
+  {% if not exam_rank %}
+  <p class="muted">暂无考试数据。</p>
+  {% else %}
+  <table>
+    <tr>
+      <th>排名</th><th>段位</th><th>账号</th><th>姓名</th>
+      <th>考试次数</th><th>平均分</th><th>最高分</th><th>及格次数</th>
+    </tr>
+    {% for r in exam_rank %}
+    <tr {{ 'style=background:#fef3c7;' if r.id == me.id else ''|safe }}>
+      <td>
+        {% if r.rank == 1 %}<span style="font-size:22px">🥇</span>
+        {% elif r.rank == 2 %}<span style="font-size:20px">🥈</span>
+        {% elif r.rank == 3 %}<span style="font-size:18px">🥉</span>
+        {% else %}<b>{{ r.rank }}</b>{% endif %}
+      </td>
+      <td><span title="{{ r.badge[1] }}">{{ r.badge[0] }} {{ r.badge[1] }}</span>
+        {% if r.win_streak >= 3 %}<span title="连胜{{ r.win_streak }}场">🔥</span>{% endif %}
+      </td>
+      <td>{{ r.username }}</td>
+      <td>{{ r.real_name or '—' }}</td>
+      <td>{{ r.exam_count or 0 }}</td>
+      <td><b>{{ r.avg_score if r.avg_score is not none else '—' }}</b></td>
+      <td>{{ r.best_score or '—' }}</td>
+      <td>{{ r.pass_count or 0 }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h3>💪 练习排名（按总正确题数）</h3>
+  {% if not practice_rank %}
+  <p class="muted">暂无练习数据。</p>
+  {% else %}
+  <table>
+    <tr>
+      <th>排名</th><th>段位</th><th>账号</th><th>姓名</th>
+      <th>练习题数</th><th>正确题数</th><th>正确率</th>
+    </tr>
+    {% for r in practice_rank %}
+    <tr {{ 'style=background:#fef3c7;' if r.id == me.id else ''|safe }}>
+      <td>
+        {% if r.rank == 1 %}<span style="font-size:22px">🥇</span>
+        {% elif r.rank == 2 %}<span style="font-size:20px">🥈</span>
+        {% elif r.rank == 3 %}<span style="font-size:18px">🥉</span>
+        {% else %}<b>{{ r.rank }}</b>{% endif %}
+      </td>
+      <td><span title="{{ r.badge[1] }}">{{ r.badge[0] }} {{ r.badge[1] }}</span>
+        {% if r.win_streak >= 3 %}<span title="连胜{{ r.win_streak }}场">🔥</span>{% endif %}
+      </td>
+      <td>{{ r.username }}</td>
+      <td>{{ r.real_name or '—' }}</td>
+      <td>{{ r.practice_count or 0 }}</td>
+      <td><b>{{ r.correct_count or 0 }}</b></td>
+      <td>{{ r.correct_rate if r.correct_rate is not none else '—' }}%</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+</div>
+
+<p class="muted">
+  段位规则：🥉青铜（0-4胜）｜🥈白银（5-14胜）｜🥇黄金（15-29胜）｜💎铂金（30+胜）
+  ｜ 连胜3场以上显示 🔥
+</p>
+{% endblock %}

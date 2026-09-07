@@ -16,11 +16,11 @@
 ### 加分项实现
 | # | 加分项 | 实现方式 | 位置 |
 |---|--------|----------|------|
-| ① | 题目自动归类 | 关键词规则 + jieba 分词 TF-IDF 最近质心两阶段分类，写入 `category` 表 | `classifier.py` |
+| ① | 题目自动归类 | 关键词规则 + jieba 分词 TF-IDF 最近质心两阶段分类，写入 `category` 表；采集新题入库后自动触发归类 | `classifier.py` |
 | ② | 重复题检测 | 字符 2-gram 倒排索引筛候选 + 编辑距离/词级 Jaccard 精算 + 并查集聚簇 | `duplicate_detector.py` → `duplicate_report.md` |
 | ③ | 答案正确性验证（LLM） | 盲测 + 仲裁三层漏斗（见下），支持任意数量/题型范围与图片题选项 | `app/llm.py` + "AI 验证"页 |
-| ④ | 网络题库采集 | 公开题库源（DriverEasy/juhe）+ 指定 URL 爬取，后台线程执行、进度轮询、批次入库（实测新增 2021/2022/2025 年题目 1139 道） | `app/crawler.py` + "题库采集"页 |
-| ⑤ | 历年题库对比 | 按年份 × 题型/分类生成对比矩阵与趋势结论 | `trend_analysis.py` → `trend_report.md` |
+| ④ | 网络题库采集 | 公开题库源（DriverEasy/juhe）+ 指定 URL 爬取，后台线程执行、进度轮询、批次入库、新题自动归类；支持按年份版本删除采集数据（2026 原始题库受保护） | `app/crawler.py` + "题库采集"页 |
+| ⑤ | 历年题库对比 | 按年份 × 题型/分类实时生成对比矩阵与自动趋势结论，"题库采集"页直接展示；命令行脚本可导出 md 报告 | `app/trend.py` + "题库采集"页、`trend_analysis.py` → `trend_report.md` |
 | ⑥ | token 成本统计 | 每次调用记录 prompt/completion tokens 与耗时，按实际执行模型单价折算真实累计费用 | 同 ③，验证结果页汇总 |
 
 ### 答案验证算法：盲测 + 仲裁（三层漏斗）
@@ -67,13 +67,14 @@ Token 用量与费用汇总、一键导出验证报告（`answer_report.md`）�
 ```
 ├── app/
 │   ├── main.py              # Flask 主应用：认证/考试/练习/错题本/统计/记录清除/图片服务
-│   ├── crawler.py           # 加分项④：题库采集模块
+│   ├── crawler.py           # 加分项④：题库采集（爬取/去重入库/自动归类/按年份删除）
+│   ├── trend.py             # 加分项⑤：历年对比数据层（采集页与脚本共用）
 │   ├── llm.py               # 加分项③⑥：盲测+仲裁验证 / 视觉模型 / token 成本统计
 │   ├── static/style.css     # 全站样式
 │   └── templates/           # Jinja2 模板（考试分区答题卡/AI 验证/采集管理等 15 页）
 ├── sql/
-│   ├── schema.sql           # 建库脚本（14 张表 + v_user_stat / v_question_stat 视图）
-│   └── kemu1_exam_backup.sql# 全量 mysqldump 备份（含 3449 题与 759 张图片 BLOB）
+│   ├── schema.sql           # 建库脚本（15 张表 + v_user_stat / v_question_stat 视图）
+│   └── kemu1_exam_backup.sql# 全量 mysqldump 备份（含 2308 题与 757 张图片 BLOB）
 ├── docx_parser.py           # 解析 题库_2026.docx → 结构化题目（以"答案："为锚点切题）
 ├── importer.py              # 建表 + 题目/选项/图片批量入库（SHA-256 图片去重）
 ├── classifier.py            # 加分项①：题目自动归类
@@ -128,19 +129,19 @@ python app/main.py
 ```bash
 python classifier.py 你的MySQL密码        # ① 题目归类并回填 category_id
 python duplicate_detector.py 你的MySQL密码 # ② 生成 duplicate_report.md
-python trend_analysis.py                  # ⑤ 生成 trend_report.md
+python trend_analysis.py                  # ⑤ 导出 trend_report.md（网页端可直接查看）
 ```
 
-③④⑥ 在网页端操作：以管理员登录后使用导航栏"题库采集"与"AI 验证"页面。
+③④⑤⑥ 均可在网页端操作：管理员登录后使用导航栏"题库采集"（含历年对比趋势）与"AI 验证"页面。
 AI 验证需在页面中填写服务商、Base URL、API Key、模型名（可选填视觉模型用于带图题；
 保存至 `llm_config` 表，仅存数据库，不入代码仓库），支持先"测试连接"再发起批量验证任务。
 
-## 数据规模（当前）
+## 数据规模
 
-- 题库总量 **3449 题**（docx 导入 2308 + 网络采集新增 1139，含 2021/2022/2025 年份标记）
-- 题目图片 759 张 / 819 道带图题（BLOB，SHA-256 去重）
-- 重复题检测：194 对 / 145 簇（详见 `duplicate_report.md`）
-- 自动归类覆盖率 3449 题（关键词规则 + TF-IDF）
+- 备份基线：**2308 题**（题库_2026.docx 导入），题目图片 757 张 / 819 道带图题（BLOB，SHA-256 去重）
+- 网络采集功能实测可增量新增 1139 道历年题（2021/2022/2025 年份标记），采集后"历年题库对比"自动展示年份 × 题型/分类矩阵
+- 重复题检测报告：194 对 / 145 簇（详见 `duplicate_report.md`，可重新运行生成）
+- 自动归类全量覆盖（关键词规则 + TF-IDF）
 
 ## 说明
 

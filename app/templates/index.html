@@ -17,4 +17,31 @@
     <button class="btn secondary" type="submit">顺序练习（10 题）</button>
   </form>
 </div>
+{% if cur_user.role == 'student' and my_tasks %}
+<div class="card">
+  <h3>我的任务</h3>
+  <p class="muted">老师布置的待完成任务，完成后计入成绩。</p>
+  <table>
+    <tr><th>任务标题</th><th>题型分布</th><th>模式</th><th>用途</th><th>时限</th><th>我的状态</th><th>操作</th></tr>
+    {% for t in my_tasks %}
+    <tr>
+      <td><b>{{ t.title }}</b><br><span class="muted">发布：{{ t.created_at }}</span></td>
+      <td>判断 {{ t.judge_count }} + 单选 {{ t.single_count }}</td>
+      <td>{{ '考试' if t.mode == 'exam' else '练习' }}</td>
+      <td>{{ '考试（防作弊）' if t.purpose == 'exam' else '讲解（不打乱）' }}</td>
+      <td>{{ '不限时' if not t.time_limit_sec else (t.time_limit_sec // 60 ~ ' 分钟') }}</td>
+      <td>
+        {% if t.my_status == 'in_progress' %}<span class="tag-bad">进行中</span>
+        {% else %}<span class="muted">未开始</span>{% endif %}
+      </td>
+      <td>
+        <form method="post" action="{{ url_for('task_start', tid=t.id) }}" class="inline">
+          <button class="btn small" type="submit">{{ '继续作答' if t.my_status == 'in_progress' else '开始作答' }}</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+{% endif %}
 {% endblock %}

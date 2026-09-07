@@ -65,3 +65,19 @@ html { scroll-behavior:smooth; }
   .exam-layout { flex-direction:column; }
   .answer-card { position:static; flex:none; width:100%; max-height:none; }
 }
+
+/* 功能⑥：答案解析 */
+.explanation { margin-top:8px; padding:8px 12px; background:#f0f7ff; border-left:3px solid var(--brand); border-radius:4px; font-size:14px; line-height:1.6; }
+.explanation-none { margin-top:4px; font-size:13px; }
+.explanation-input { border:1px solid var(--line); border-radius:4px; padding:4px 6px; font-size:13px; resize:vertical; }
+.explanation-input:focus { border-color:var(--brand); outline:none; }
+.search-bar { display:flex; gap:8px; align-items:center; }
+.search-input { padding:6px 10px; border:1px solid var(--line); border-radius:4px; width:260px; }
+.pagination { margin:1em 0; display:flex; gap:12px; align-items:center; }
+
+/* 功能②：考试倒计时 / 练习计时 */
+.countdown-box { margin:12px 0; padding:10px; background:#fef2f2; border:1px solid #fecaca; border-radius:8px; text-align:center; }
+.countdown-num { font-size:24px; font-weight:800; color:#dc2626; font-variant-numeric:tabular-nums; letter-spacing:1px; }
+.practice-timer { margin:12px 0; padding:10px; background:#f0f7ff; border:1px solid #bfdbfe; border-radius:8px; text-align:center; }
+.practice-timer .countdown-num { color:var(--brand); }
+.practice-controls { margin-top:6px; display:flex; gap:6px; justify-content:center; }

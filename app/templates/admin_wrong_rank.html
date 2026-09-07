@@ -1,0 +1,48 @@
+{% extends 'base.html' %}
+{% block title %}错题排行榜{% endblock %}
+{% block content %}
+<h1>错题排行榜</h1>
+<p class="muted">统计错次最多的题目，方便教师讲评重点。默认显示全局数据，可按任务筛选看单次讲评重点。</p>
+
+<form method="get" class="search-bar" style="margin:1em 0;">
+  <label>筛选任务：</label>
+  <select name="task" class="search-input">
+    <option value="">全部（全局）</option>
+    {% for t in tasks %}
+    <option value="{{ t.id }}" {{ 'selected' if task_filter == t.id|string }}>{{ t.title }}</option>
+    {% endfor %}
+  </select>
+  <button type="submit" class="btn">查询</button>
+  <a href="{{ url_for('admin_wrong_rank') }}" class="btn">重置</a>
+</form>
+
+{% if not rows %}
+<div class="card">
+  <p class="muted">暂无错题数据{{ '（该任务）' if task_filter else '，学生答题后将自动统计' }}。</p>
+</div>
+{% else %}
+<table>
+  <tr>
+    <th>排名</th><th>题号</th><th>题型</th><th>题干摘要</th>
+    <th>错次</th><th>错误率</th><th>常见错误答案</th><th>操作</th>
+  </tr>
+  {% for r in rows %}
+  <tr>
+    <td><b>{{ loop.index }}</b></td>
+    <td>{{ r.id }}</td>
+    <td>{{ {'judge':'判断','single':'单选','multi':'多选'}.get(r.qtype, r.qtype) }}</td>
+    <td>{{ r.stem_short }}…</td>
+    <td><span class="tag-bad">{{ r.wrong_count }}</span></td>
+    <td>
+      {% if r.wrong_rate >= 70 %}<span class="tag-bad">{{ r.wrong_rate }}%</span>
+      {% elif r.wrong_rate >= 40 %}<span style="color:#f59e0b;font-weight:700">{{ r.wrong_rate }}%</span>
+      {% else %}<span class="muted">{{ r.wrong_rate }}%</span>{% endif %}
+    </td>
+    <td>{{ r.common_wrong or '—' }}</td>
+    <td><a href="{{ url_for('admin_questions', q=r.stem_short[:20]) }}" class="btn small">去讲解</a></td>
+  </tr>
+  {% endfor %}
+</table>
+<p class="muted">共 {{ rows|length }} 道错题（最多显示 50 道，按错误次数降序）</p>
+{% endif %}
+{% endblock %}

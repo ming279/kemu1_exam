@@ -1,0 +1,51 @@
+{% extends 'base.html' %}
+{% block title %}题目管理{% endblock %}
+{% block content %}
+<h1>题目管理</h1>
+<p class="muted">共 {{ total }} 道题，每页 20 题。点击解析框可编辑，失焦自动保存。</p>
+
+<form method="get" class="search-bar" style="margin: 1em 0;">
+  <input type="text" name="q" value="{{ search }}" placeholder="搜索题干关键词" class="search-input">
+  <button type="submit" class="btn">搜索</button>
+  {% if search %}<a href="{{ url_for('admin_questions') }}" class="btn">清除</a>{% endif %}
+</form>
+
+<table>
+  <tr><th>ID</th><th>题型</th><th>题干摘要</th><th>答案解析</th></tr>
+  {% for r in rows %}
+  <tr>
+    <td>{{ r.id }}</td>
+    <td>{{ {'judge':'判断题','single':'单选题','multi':'多选题'}.get(r.qtype, r.qtype) }}</td>
+    <td>{{ r.stem_short }}…</td>
+    <td>
+      <textarea class="explanation-input" data-qid="{{ r.id }}"
+                placeholder="暂无解析" rows="2" style="width:100%">{{ r.explanation or '' }}</textarea>
+    </td>
+  </tr>
+  {% endfor %}
+</table>
+
+<div class="pagination">
+  {% if page > 1 %}<a href="{{ url_for('admin_questions', page=page-1, q=search) }}">上一页</a>{% endif %}
+  <span>第 {{ page }} / {{ pages }} 页</span>
+  {% if page < pages %}<a href="{{ url_for('admin_questions', page=page+1, q=search) }}">下一页</a>{% endif %}
+</div>
+
+<script>
+document.querySelectorAll('.explanation-input').forEach(function(ta) {
+  var saveTimer = null;
+  ta.addEventListener('blur', function() {
+    var qid = this.dataset.qid;
+    var val = this.value.trim();
+    fetch('/admin/questions/' + qid + '/explanation', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+      body: 'explanation=' + encodeURIComponent(val)
+    }).then(function(r) { return r.json(); })
+      .then(function(d) {
+        if (d.ok) { console.log('解析已保存：题#' + qid); }
+      });
+  });
+});
+</script>
+{% endblock %}
