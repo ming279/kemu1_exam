@@ -22,7 +22,7 @@
     <a href="{{ url_for('stats') }}">我的统计</a>
     <a href="{{ url_for('ranking') }}">排名</a>
     <a href="{{ url_for('pk_lobby') }}">PK挑战</a>
-    {% if cur_user.role == 'admin' %}<a href="{{ url_for('admin_stats') }}">全局统计</a><a href="{{ url_for('admin_questions') }}">题目管理</a><a href="{{ url_for('admin_tasks') }}">任务管理</a><a href="{{ url_for('admin_wrong_rank') }}">错题排行</a><a href="{{ url_for('admin_answer_data') }}">答题数据</a><a href="{{ url_for('crawl_page') }}">题库采集</a><a href="{{ url_for('ai_page') }}">AI 验证</a>{% endif %}
+    {% if cur_user.role == 'admin' %}<a href="{{ url_for('admin_users') }}">用户管理</a><a href="{{ url_for('admin_stats') }}">全局统计</a><a href="{{ url_for('admin_questions') }}">题目管理</a><a href="{{ url_for('admin_tasks') }}">任务管理</a><a href="{{ url_for('admin_wrong_rank') }}">错题排行</a><a href="{{ url_for('admin_answer_data') }}">答题数据</a><a href="{{ url_for('crawl_page') }}">题库采集</a><a href="{{ url_for('ai_page') }}">AI 验证</a>{% endif %}
     <span class="muted">{{ cur_user.username }}（{{ '管理员' if cur_user.role == 'admin' else '考生' }}）</span>
     <a href="{{ url_for('logout') }}">退出</a>
   </div>
