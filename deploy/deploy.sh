@@ -79,7 +79,8 @@ SQL
 echo "[5/7] 创建 Python 虚拟环境并安装依赖 ..."
 python3 -m venv "$APP_DIR/venv"
 "$APP_DIR/venv/bin/pip" install -q --upgrade pip
-"$APP_DIR/venv/bin/pip" install -q -r "$APP_DIR/requirements.txt" gunicorn eventlet
+"$APP_DIR/venv/bin/pip" install -q -r "$APP_DIR/requirements.txt" gunicorn gevent gevent-websocket
+# eventlet 不安装：gunicorn v23+ 已移除 eventlet worker，WebSocket 用 gevent 提供
 
 # ---- 5. 环境变量文件 ----
 echo "[6/7] 写入环境配置 $ENV_FILE ..."
@@ -105,7 +106,7 @@ After=mysql.service network.target
 Type=simple
 WorkingDirectory=${APP_DIR}/app
 EnvironmentFile=${ENV_FILE}
-ExecStart=${APP_DIR}/venv/bin/gunicorn --worker-class eventlet -w 1 \
+ExecStart=${APP_DIR}/venv/bin/gunicorn --worker-class gevent -w 1 \
           --bind 0.0.0.0:5000 --timeout 120 --access-logfile - main:app
 Restart=always
 RestartSec=3
