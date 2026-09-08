@@ -159,14 +159,16 @@ def judge_answer(question, user_labels):
 def register():
     if request.method == 'POST':
         username = request.form['username'].strip()
+        real_name = request.form.get('real_name', '').strip()
         password = request.form['password']
-        if not username or not password:
-            flash('账号和密码不能为空', 'danger')
+        if not username or not password or not real_name:
+            flash('账号、姓名和密码不能为空', 'danger')
         elif q("SELECT id FROM `user` WHERE username=%s", (username,), one=True):
             flash('该账号已被注册', 'danger')
         else:
-            execute("INSERT INTO `user` (username, password_hash, role) "
-                    "VALUES (%s, %s, 'student')", (username, sha256(password)))
+            execute("INSERT INTO `user` (username, password_hash, real_name, role) "
+                    "VALUES (%s, %s, %s, 'student')",
+                    (username, sha256(password), real_name))
             flash('注册成功，请登录', 'success')
             return redirect(url_for('login'))
     return render_template('register.html')
@@ -661,6 +663,101 @@ def admin_clear_user(uid):
     flash(f"已清除用户 {u['username']} 的记录：试卷 {n_paper} 份、"
           f"练习 {n_prac} 条、错题 {n_wrong} 条", 'success')
     return redirect(url_for('admin_stats'))
+
+
+# ---------------- 功能⑧：注册用户管理 ----------------
+@app.route('/admin/users')
+@login_required
+def admin_users():
+    """用户管理：账号列表 + 改名 / 重置密码 / 删除"""
+    me, back = _admin_or_back()
+    if back:
+        return back
+    rows = q(
+        "SELECT u.id, u.username, u.real_name, u.role, "
+        "u.pk_wins, u.pk_losses, u.win_streak, u.created_at, "
+        "COALESCE(p.total_answered, 0) AS answered, "
+        "COALESCE(p.total_correct, 0) AS correct_n "
+        "FROM `user` u LEFT JOIN ("
+        "  SELECT user_id, COUNT(*) AS total_answered, SUM(is_correct) AS total_correct "
+        "  FROM practice GROUP BY user_id"
+        ") p ON p.user_id = u.id "
+        "ORDER BY u.role DESC, u.id")
+    return render_template('admin_users.html', users=rows)
+
+
+def _target_student(uid):
+    """取待管理的学生；用户不存在或为管理员账号时返回 None（已 flash 提示）"""
+    u = q("SELECT id, username, role FROM `user` WHERE id=%s", (uid,), one=True)
+    if not u:
+        flash('用户不存在', 'danger')
+    elif u['role'] != 'student':
+        flash('管理员账号不可在此操作', 'danger')
+    else:
+        return u
+    return None
+
+
+@app.route('/admin/users/<int:uid>/delete', methods=['POST'])
+@login_required
+def admin_user_delete(uid):
+    """删除学生账号及其全部数据（考试/练习/错题/任务记录/PK对战）"""
+    me, back = _admin_or_back()
+    if back:
+        return back
+    u = _target_student(uid)
+    if not u:
+        return redirect(url_for('admin_users'))
+    # 有外键引用的数据按序删除：task_record（引用试卷）→ 试卷（明细随外键级联）→ 其余
+    execute("DELETE FROM task_record WHERE uid=%s", (uid,))
+    execute("DELETE FROM exam_paper WHERE user_id=%s", (uid,))
+    execute("DELETE FROM practice WHERE user_id=%s", (uid,))
+    execute("DELETE FROM wrong_book WHERE user_id=%s", (uid,))
+    execute("DELETE FROM pk_challenge WHERE challenger_uid=%s OR opponent_uid=%s",
+            (uid, uid))
+    execute("DELETE FROM `user` WHERE id=%s", (uid,))
+    # 清理内存中该用户所在的 PK 房间并通知对手
+    for key, room in list(PK_ROOMS.items()):
+        if uid in (room['challenger'], room['opponent']):
+            socketio.emit('room_closed', room=key)
+            PK_ROOMS.pop(key, None)
+    flash(f"已删除用户 {u['username']} 及其全部答题与对战数据", 'success')
+    return redirect(url_for('admin_users'))
+
+
+@app.route('/admin/users/<int:uid>/reset_password', methods=['POST'])
+@login_required
+def admin_user_reset_password(uid):
+    """重置学生密码为 123456 并踢下线（清 login_token 强制重新登录）"""
+    me, back = _admin_or_back()
+    if back:
+        return back
+    u = _target_student(uid)
+    if not u:
+        return redirect(url_for('admin_users'))
+    execute("UPDATE `user` SET password_hash=%s, login_token=NULL WHERE id=%s",
+            (sha256('123456'), uid))
+    flash(f"用户 {u['username']} 的密码已重置为 123456", 'success')
+    return redirect(url_for('admin_users'))
+
+
+@app.route('/admin/users/<int:uid>/rename', methods=['POST'])
+@login_required
+def admin_user_rename(uid):
+    """更正学生姓名（注册时填写的真实姓名）"""
+    me, back = _admin_or_back()
+    if back:
+        return back
+    u = _target_student(uid)
+    if not u:
+        return redirect(url_for('admin_users'))
+    real_name = request.form.get('real_name', '').strip()
+    if not real_name:
+        flash('姓名不能为空', 'danger')
+    else:
+        execute("UPDATE `user` SET real_name=%s WHERE id=%s", (real_name, uid))
+        flash(f"用户 {u['username']} 的姓名已更新为 {real_name}", 'success')
+    return redirect(url_for('admin_users'))
 
 
 # ---------------- 功能①：教师发布任务 ----------------

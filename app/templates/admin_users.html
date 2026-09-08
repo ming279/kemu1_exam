@@ -1,0 +1,55 @@
+{% extends 'base.html' %}
+{% block title %}用户管理{% endblock %}
+{% block content %}
+<h2>👤 用户管理</h2>
+
+<div class="card">
+  <h3>账号列表（共 {{ users|length }} 个）</h3>
+  <p class="muted">删除学生将连带清除其考试、练习、错题、任务与 PK 全部数据，不可恢复！
+     重置密码后密码变为 123456 且该学生立即下线。注册时填写的姓名可在此更正。</p>
+  <table>
+    <tr><th>ID</th><th>账号</th><th>姓名</th><th>角色</th><th>答题/正确</th><th>PK 胜/负</th><th>注册时间</th><th>操作</th></tr>
+    {% for u in users %}
+    <tr>
+      <td>{{ u.id }}</td>
+      <td>{{ u.username }}</td>
+      <td>
+        {% if u.role == 'student' %}
+        <form method="post" action="{{ url_for('admin_user_rename', uid=u.id) }}" class="inline rename-form">
+          <input type="text" name="real_name" value="{{ u.real_name or '' }}" maxlength="50" style="width:92px;">
+          <button type="submit" class="btn small" onclick="return confirm('更新 {{ u.username }} 的姓名？')">改名</button>
+        </form>
+        {% else %}<span class="muted">{{ u.real_name or '—' }}</span>{% endif %}
+      </td>
+      <td>{{ '管理员' if u.role == 'admin' else '考生' }}</td>
+      <td>{{ u.answered }} / {{ u.correct_n }}</td>
+      <td>{{ u.pk_wins }} / {{ u.pk_losses }}{% if u.win_streak >= 3 %} 🔥{{ u.win_streak }}{% endif %}</td>
+      <td>{{ u.created_at }}</td>
+      <td>
+        {% if u.role == 'student' %}
+        <div style="display:flex;gap:6px;">
+          <form method="post" action="{{ url_for('admin_user_reset_password', uid=u.id) }}" class="inline">
+            <button type="submit" class="btn small"
+                    onclick="return confirm('将 {{ u.username }} 的密码重置为 123456 并踢下线？')">重置密码</button>
+          </form>
+          <form method="post" action="{{ url_for('admin_user_delete', uid=u.id) }}" class="inline">
+            <button type="submit" class="btn small" style="background:#ef4444;"
+                    onclick="return confirmDelete('{{ u.username }}')">删除</button>
+          </form>
+        </div>
+        {% else %}<span class="muted">—</span>{% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function confirmDelete(uname){
+  return confirm('确定删除用户 ' + uname + ' 吗？\n'
+    + '其考试、练习、错题、任务、PK 数据将一并删除，不可恢复！');
+}
+</script>
+{% endblock %}
