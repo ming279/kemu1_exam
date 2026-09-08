@@ -55,13 +55,13 @@ EOF
 systemctl restart mysql
 sleep 2
 
-# ---- 2. 导入题库备份（备份自带 CREATE DATABASE / USE）----
-echo "[3/7] 导入题库备份 sql/kemu1_exam_backup.sql ..."
-if [ ! -f "$APP_DIR/sql/kemu1_exam_backup.sql" ]; then
-  echo "错误：找不到 $APP_DIR/sql/kemu1_exam_backup.sql"
+# ---- 2. 导入题库备份（备份自带 CREATE DATABASE / USE，hex-blob 格式防二进制损坏）----
+echo "[3/7] 导入题库备份 sql/kemu1_exam_backup.sql.gz ..."
+if [ ! -f "$APP_DIR/sql/kemu1_exam_backup.sql.gz" ]; then
+  echo "错误：找不到 $APP_DIR/sql/kemu1_exam_backup.sql.gz"
   exit 1
 fi
-mysql --max-allowed-packet=512M < "$APP_DIR/sql/kemu1_exam_backup.sql"
+gunzip -c "$APP_DIR/sql/kemu1_exam_backup.sql.gz" | mysql --max-allowed-packet=512M --default-character-set=utf8mb4
 
 # ---- 3. 创建专用数据库账号 ----
 echo "[4/7] 创建数据库账号 ..."
