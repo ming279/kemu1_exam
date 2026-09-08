@@ -1705,6 +1705,7 @@ def _pk_next_question(key, room):
         'idx': idx,
         'total': PK_QUESTION_COUNT,
         'stem': qq['stem'],
+        'images': qq.get('images', []),
         'options': [{'label': o['label'], 'content': o['content']}
                     for o in qq['options']],
         'q_time': PK_Q_TIME,
