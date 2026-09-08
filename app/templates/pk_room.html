@@ -194,7 +194,22 @@ function showBig(text) {
 socket.on('next_question', function(d) {
   myAnswered = false;
   document.getElementById('q-idx').textContent = d.idx + 1;
-  document.getElementById('q-stem').textContent = d.stem;
+  var stemEl = document.getElementById('q-stem');
+  stemEl.textContent = d.stem;
+  // 题目配图（有图题渲染，无图题不显示）
+  stemEl.parentNode.querySelectorAll('img.qimg').forEach(function(im){ im.remove(); });
+  (d.images || []).forEach(function(iid) {
+    var im = document.createElement('img');
+    im.className = 'qimg';
+    im.src = '/image/' + iid;
+    im.alt = '题目配图';
+    im.style.maxWidth = '320px';
+    im.style.maxHeight = '180px';
+    im.style.display = 'block';
+    im.style.margin = '10px 0';
+    im.style.borderRadius = '8px';
+    stemEl.after(im);
+  });
   var box = document.getElementById('q-options');
   box.innerHTML = '';
   d.options.forEach(function(o) {
