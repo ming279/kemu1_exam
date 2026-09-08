@@ -1489,13 +1489,25 @@ def pk_challenge():
         flash('对手不存在', 'danger')
         return redirect(url_for('pk_lobby'))
 
-    # 抽10道题：判断题 + 单选题混合（单击作答，抢答节奏不变）
-    qids = [r['id'] for r in
-            q(f"SELECT id FROM question WHERE qtype IN ('judge','single') "
-              f"ORDER BY RAND() LIMIT {PK_QUESTION_COUNT}")]
-    if len(qids) < PK_QUESTION_COUNT:
-        flash('题库题目不足10道，无法PK', 'danger')
+    # 题型配置：判断题/单选题数量由发起方指定，总数须等于 10
+    judge_n = request.form.get('judge_count', type=int)
+    single_n = request.form.get('single_count', type=int)
+    if judge_n is None or single_n is None or judge_n < 0 or single_n < 0 \
+            or judge_n + single_n != PK_QUESTION_COUNT:
+        flash('题型配置无效：判断题 + 单选题数量之和须等于 10', 'danger')
         return redirect(url_for('pk_lobby'))
+
+    judge_ids = [r['id'] for r in
+                 q(f"SELECT id FROM question WHERE qtype='judge' "
+                   f"ORDER BY RAND() LIMIT {judge_n}")] if judge_n else []
+    single_ids = [r['id'] for r in
+                  q(f"SELECT id FROM question WHERE qtype='single' "
+                    f"ORDER BY RAND() LIMIT {single_n}")] if single_n else []
+    if len(judge_ids) < judge_n or len(single_ids) < single_n:
+        flash('题库对应题型数量不足，无法PK', 'danger')
+        return redirect(url_for('pk_lobby'))
+    qids = judge_ids + single_ids
+    random.shuffle(qids)  # 判断/单选交错出场
 
     pid = execute(
         "INSERT INTO pk_challenge (challenger_uid, opponent_uid, question_ids, status) "
@@ -1773,17 +1785,16 @@ def pk_answer(data):
             'locked': True,
         }, room=key)
     else:
-        # 答错：不加分，但对方还可以答
+        # 抢答错误：直接送对方 1 分并锁定本题，双方立即进入下一题
+        room['scores'][other] += 1
         room['answers'].setdefault(idx, {})[uid] = answer
+        room['locked_q'] = idx
         emit('answer_result', {
             'uid': uid, 'correct': False, 'answer': answer,
+            'correct_answer': correct_str,
             'scores': {str(k): v for k, v in room['scores'].items()},
-            'locked': False,
-        }, room=request.sid)
-        # 通知对方"对手答了但错了，你可以继续答"
-        other_sid = room['sids'].get(other)
-        if other_sid:
-            emit('opponent_wrong', {'uid': uid}, room=other_sid)
+            'locked': True,
+        }, room=key)
 
 
 @socketio.on('pk_emoji')
