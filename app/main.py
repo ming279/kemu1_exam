@@ -15,18 +15,33 @@ import random
 import hashlib
 from functools import wraps
 
+# 生产部署（Linux + gunicorn）时 eventlet 提供 WebSocket 高性能支持；
+# 必须在导入其他第三方库前完成 monkey patch。
+# 本机 Windows 开发环境不装 eventlet，自动跳过（退化为 threading 模式）。
+try:
+    import eventlet
+    eventlet.monkey_patch()
+except ImportError:
+    pass
+
 import pymysql
 from flask import (Flask, g, session, request, redirect, url_for,
                    render_template, flash, Response, abort, jsonify)
 from flask_socketio import SocketIO, join_room, emit, leave_room
 
 app = Flask(__name__)
-app.secret_key = 'kemu1-exam-2026-sec'
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
+app.secret_key = os.environ.get('SECRET_KEY', 'kemu1-exam-2026-sec-dev')
+# async_mode 不写死：服务器装了 eventlet 自动用 eventlet（gunicorn 部署），
+# 本机 Windows 未装则自动 threading（socketio.run 开发模式）
+socketio = SocketIO(app, cors_allowed_origins="*")
 
-DB = dict(host='localhost', user='root',
-          password=os.environ.get('MYSQL_PASSWORD', '123456'),
-          database='kemu1_exam', charset='utf8mb4',
+# 数据库连接：优先读环境变量（云部署），本机默认值保持不变
+DB = dict(host=os.environ.get('DB_HOST', 'localhost'),
+          user=os.environ.get('DB_USER', 'root'),
+          password=os.environ.get('DB_PASSWORD',
+                                  os.environ.get('MYSQL_PASSWORD', '123456')),
+          database=os.environ.get('DB_NAME', 'kemu1_exam'),
+          charset='utf8mb4',
           cursorclass=pymysql.cursors.DictCursor, autocommit=True)
 
 # 模拟考试组卷参数（科目一：100 题）
@@ -1952,6 +1967,11 @@ def ai_verify_status(bid):
     return dict(row)
 
 
+# 生产部署（Linux）用 gunicorn + eventlet，不执行本块：
+#   gunicorn --worker-class eventlet -w 1 --bind 0.0.0.0:5000 main:app
+# 本机 Windows 开发直接 python main.py（threading 模式）
 if __name__ == '__main__':
-    socketio.run(app, debug=True, host='0.0.0.0', port=5000,
+    _port = int(os.environ.get('PORT', 5000))
+    _debug = os.environ.get('FLASK_DEBUG', '1') == '1'
+    socketio.run(app, debug=_debug, host='0.0.0.0', port=_port,
                  allow_unsafe_werkzeug=True)
