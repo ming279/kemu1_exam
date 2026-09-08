@@ -1746,7 +1746,7 @@ def pk_room(pid):
 # ---- WebSocket 事件 ----
 def _session_uid():
     """socket 事件专用的会话校验：账号在其他设备登录后，旧会话无效"""
-    uid = _session_uid()
+    uid = session.get('uid')
     if uid is None:
         return None
     return uid if _login_valid(uid) else None
