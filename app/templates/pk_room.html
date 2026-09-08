@@ -71,8 +71,9 @@
       <h2>⚔️ {{ my_name }} VS {{ opp_name }}</h2>
       <p class="muted">10 道判断题同题竞速，答对一题小车前进 10%，先答对锁定该题！每题 {{ q_time }} 秒。</p>
       <div id="ready-status" class="muted">等待对方加入房间…</div>
-      <div style="margin-top:16px;">
+      <div style="margin-top:16px;display:flex;gap:12px;align-items:center;">
         <button class="btn" id="btn-ready" style="font-size:18px; padding:12px 32px;">我准备好了</button>
+        <button class="btn" id="btn-exit" style="background:#9ca3af;">退出房间</button>
       </div>
     </div>
 
@@ -80,7 +81,11 @@
     <div class="card" id="play-panel" style="display:none;">
       <div style="display:flex; justify-content:space-between; align-items:center;">
         <h3 style="margin:0;">第 <span id="q-idx">1</span> / 10 题</h3>
-        <div class="q-timer" id="q-timer">{{ q_time }}</div>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <div class="q-timer" id="q-timer">{{ q_time }}</div>
+          <button class="btn" id="btn-exit-play" style="background:#9ca3af;padding:6px 14px;">退出</button>
+          <button class="btn" id="btn-concede" style="background:#ef4444;padding:6px 14px;">认输</button>
+        </div>
       </div>
       <div style="margin:16px 0; font-size:17px; font-weight:600;" id="q-stem"></div>
       <div id="q-options"></div>
@@ -135,6 +140,29 @@ document.getElementById('btn-ready').addEventListener('click', function() {
   this.disabled = true;
   this.textContent = '已准备，等待对方…';
   document.getElementById('ready-status').textContent = '你已准备，等待对方…';
+});
+
+// 房间被关闭（自己退出/对方取消）→ 回大厅
+socket.on('room_closed', function() {
+  alert('房间已关闭');
+  location.href = '/pk';
+});
+
+// 退出房间：等待期作废房间；对局中退出判负并回大厅
+function leaveRoom() {
+  var msg = document.getElementById('play-panel').style.display !== 'none'
+    ? '对局中退出将直接判负，确定退出？' : '确定退出房间？';
+  if (!confirm(msg)) return;
+  socket.emit('pk_leave', {pid: PID});
+  setTimeout(function(){ location.href = '/pk'; }, 1200);
+}
+document.getElementById('btn-exit').addEventListener('click', leaveRoom);
+document.getElementById('btn-exit-play').addEventListener('click', leaveRoom);
+
+// 认输：对手获胜，自己留在房间看结算
+document.getElementById('btn-concede').addEventListener('click', function() {
+  if (!confirm('确定认输吗？对手将获得本场胜利！')) return;
+  socket.emit('pk_concede', {pid: PID});
 });
 
 // 3-2-1 倒计时

@@ -1803,12 +1803,14 @@ def pk_emoji(data):
         emit('emoji', {'from': uid, 'emoji': emoji}, room=sid)
 
 
-def _pk_finish(key, room):
-    """游戏结束：判定胜负，更新战绩"""
+def _pk_finish(key, room, force_winner=None):
+    """游戏结束：判定胜负，更新战绩（force_winner 用于认输/中途退出判负）"""
     room['status'] = 'finished'
     cs = room['scores'][room['challenger']]
     os_ = room['scores'][room['opponent']]
-    if cs > os_:
+    if force_winner is not None:
+        winner = force_winner
+    elif cs > os_:
         winner = room['challenger']
     elif os_ > cs:
         winner = room['opponent']
@@ -1836,6 +1838,46 @@ def _pk_finish(key, room):
         'challenger': room['challenger'],
         'opponent': room['opponent'],
     }, room=key)
+
+
+@socketio.on('pk_concede')
+def pk_concede(data):
+    """认输：对局中主动放弃，对手获胜，自己留在房间看结算"""
+    pid = data.get('pid')
+    key = _pk_room_key(pid)
+    room = PK_ROOMS.get(key)
+    if not room or room['status'] != 'playing':
+        return
+    uid = session.get('uid')
+    if uid not in (room['challenger'], room['opponent']):
+        return
+    other = room['opponent'] if uid == room['challenger'] else room['challenger']
+    _pk_finish(key, room, force_winner=other)
+    PK_ROOMS.pop(key, None)
+
+
+@socketio.on('pk_leave')
+def pk_leave(data):
+    """退出房间：等待期作废房间；对局中按认输处理并退出"""
+    pid = data.get('pid')
+    key = _pk_room_key(pid)
+    room = PK_ROOMS.get(key)
+    if not room:
+        emit('room_closed', room=request.sid)
+        return
+    uid = session.get('uid')
+    if uid not in (room['challenger'], room['opponent']):
+        return
+    if room['status'] == 'playing':
+        other = room['opponent'] if uid == room['challenger'] else room['challenger']
+        _pk_finish(key, room, force_winner=other)   # 对手收到结算
+        emit('room_closed', room=request.sid)       # 退出者直接回大厅
+        PK_ROOMS.pop(key, None)
+        return
+    # 等待/准备阶段：房间作废，双方回大厅
+    execute("UPDATE pk_challenge SET status='declined' WHERE id=%s", (pid,))
+    emit('room_closed', room=key)
+    PK_ROOMS.pop(key, None)
 
 
 # ---------------- image 服务 ----------------
