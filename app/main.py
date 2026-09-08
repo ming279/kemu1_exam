@@ -1460,8 +1460,19 @@ def pk_lobby():
         "ORDER BY p.id DESC LIMIT 10",
         (session['uid'], session['uid']))
     badge = _pk_badge(my_stat['pk_wins'] or 0)
+    # 收到的对战邀请（10 分钟内有效，防止陈旧邀请堆积）
+    invitations = q(
+        "SELECT p.id, uc.username AS c_name, uc.real_name AS c_real, "
+        "uc.pk_wins AS c_wins, p.created_at "
+        "FROM pk_challenge p JOIN `user` uc ON uc.id=p.challenger_uid "
+        "WHERE p.opponent_uid=%s AND p.status='waiting' "
+        "AND p.created_at >= NOW() - INTERVAL 10 MINUTE ORDER BY p.id DESC",
+        (session['uid'],))
+    for inv in invitations:
+        inv['created_at'] = str(inv['created_at'])[:19]
     return render_template('pk_lobby.html', students=students,
-                           my_stat=my_stat, badge=badge, records=records, me=me)
+                           my_stat=my_stat, badge=badge, records=records, me=me,
+                           invitations=invitations)
 
 
 @app.route('/pk/challenge', methods=['POST'])
@@ -1505,7 +1516,45 @@ def pk_challenge():
         'ready': set(),
         'sids': {},
     }
+    # 对手在线则实时推送邀请（大厅轮询作兜底）
+    me_row = q("SELECT username FROM `user` WHERE id=%s", (session['uid'],), one=True)
+    for sid, uid in list(ONLINE_SIDS.items()):
+        if uid == opponent_id:
+            socketio.emit('pk_invited',
+                          {'pid': pid, 'from': me_row['username']}, to=sid)
     return redirect(url_for('pk_room', pid=pid))
+
+
+@app.route('/pk/invitations')
+@login_required
+def pk_invitations():
+    """大厅轮询：我收到的待接受邀请"""
+    rows = q(
+        "SELECT p.id, uc.username AS c_name, uc.real_name AS c_real, "
+        "p.created_at FROM pk_challenge p "
+        "JOIN `user` uc ON uc.id=p.challenger_uid "
+        "WHERE p.opponent_uid=%s AND p.status='waiting' "
+        "AND p.created_at >= NOW() - INTERVAL 10 MINUTE ORDER BY p.id DESC",
+        (session['uid'],))
+    for r in rows:
+        r['created_at'] = str(r['created_at'])[:19]
+    return {'invitations': [dict(r) for r in rows]}
+
+
+@app.route('/pk/<int:pid>/decline', methods=['POST'])
+@login_required
+def pk_decline(pid):
+    """拒绝邀请"""
+    rec = q("SELECT id FROM pk_challenge WHERE id=%s AND opponent_uid=%s "
+            "AND status='waiting'", (pid, session['uid']), one=True)
+    if rec:
+        execute("UPDATE pk_challenge SET status='declined' WHERE id=%s", (pid,))
+        key = _pk_room_key(pid)
+        room = PK_ROOMS.pop(key, None)
+        if room:
+            socketio.emit('pk_cancelled', room=key)
+        flash('已拒绝该对战邀请', 'warning')
+    return redirect(url_for('pk_lobby'))
 
 
 @app.route('/pk/<int:pid>')
@@ -1576,12 +1625,23 @@ def socket_disconnect():
 
 @socketio.on('pk_join')
 def pk_join(data):
-    """玩家加入房间"""
+    """玩家加入房间（服务重启后可从数据库恢复未开始的房间）"""
     pid = data.get('pid')
     key = _pk_room_key(pid)
     room = PK_ROOMS.get(key)
     if not room:
-        return
+        rec = q("SELECT * FROM pk_challenge WHERE id=%s", (pid,), one=True)
+        if not rec or rec['status'] != 'waiting':
+            return
+        room = PK_ROOMS[key] = {
+            'challenger': rec['challenger_uid'],
+            'opponent': rec['opponent_uid'],
+            'status': 'waiting',
+            'questions': [int(x) for x in rec['question_ids'].split(',')],
+            'current_q': -1,
+            'scores': {rec['challenger_uid']: 0, rec['opponent_uid']: 0},
+            'answers': {}, 'answered': {}, 'ready': set(), 'sids': {},
+        }
     uid = session.get('uid')
     if uid not in (room['challenger'], room['opponent']):
         return
