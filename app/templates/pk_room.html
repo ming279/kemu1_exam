@@ -8,8 +8,8 @@
 .finish-line { position:absolute; top:38px; left:0; right:0; height:6px; background:repeating-linear-gradient(45deg,#fff 0 12px,#111 12px 24px); }
 .finish-flag { position:absolute; top:14px; left:50%; transform:translateX(-50%); font-size:28px; }
 .lane { position:absolute; width:44%; top:60px; bottom:24px; }
-.lane-me { left:4%; }
-.lane-opp { right:4%; }
+.lane-c { left:4%; }
+.lane-o { right:4%; }
 .lane-label { text-align:center; font-size:13px; margin-bottom:6px; font-weight:700; }
 .car { position:absolute; left:50%; transform:translateX(-50%); font-size:36px; transition:bottom 0.6s cubic-bezier(.25,.8,.3,1); bottom:0; }
 .lane-track-bg { position:absolute; inset:24px 0 0; border-left:2px dashed rgba(255,255,255,.25); border-right:2px dashed rgba(255,255,255,.25); }
@@ -50,17 +50,18 @@
     <div class="finish-flag">🏁</div>
     <div class="finish-line"></div>
     <div class="score-bar">
-      <span id="score-me">0</span> : <span id="score-opp">0</span>
+      <span id="score-c">0</span> : <span id="score-o">0</span>
     </div>
-    <div class="lane lane-me">
-      <div class="lane-label">🚗 {{ my_name }}{% if my_streak >= 3 %} 🔥{% endif %}</div>
+    <!-- 车道与车型按角色固定：发起方永远左道 🚗，应战方永远右道 🚙（双方屏幕一致） -->
+    <div class="lane lane-c">
+      <div class="lane-label">🚗 {{ rec.c_name }}{% if rec.c_streak >= 3 %} 🔥{% endif %}</div>
       <div class="lane-track-bg"></div>
-      <div class="car" id="car-me">🚗</div>
+      <div class="car" id="car-c">🚗</div>
     </div>
-    <div class="lane lane-opp">
-      <div class="lane-label">🚙 {{ opp_name }}{% if opp_streak >= 3 %} 🔥{% endif %}</div>
+    <div class="lane lane-o">
+      <div class="lane-label">🚙 {{ rec.o_name }}{% if rec.o_streak >= 3 %} 🔥{% endif %}</div>
       <div class="lane-track-bg"></div>
-      <div class="car" id="car-opp">🚙</div>
+      <div class="car" id="car-o">🚙</div>
     </div>
   </div>
 
@@ -114,6 +115,7 @@
 <script>
 var PID = {{ pid }};
 var MY_UID = {{ session['uid'] }};
+var CHALLENGER_UID = {{ rec.challenger_uid }};   // 发起方固定左道车 c，应战方固定右道车 o
 var Q_TIME = {{ q_time }};
 var socket = io();
 var myAnswered = false;
@@ -246,7 +248,7 @@ function submitAnswer(idx, label, btn) {
 // 答题结果（答对得分锁定 / 抢答答错送对方1分并锁定）
 socket.on('answer_result', function(d) {
   var btns = document.querySelectorAll('.opt-btn');
-  var oppKey = Object.keys(d.scores).filter(function(k){return k != MY_UID;})[0];
+  var oppKey = Object.keys(d.scores).filter(function(k){return k != CHALLENGER_UID;})[0];
   if (d.uid === MY_UID) {
     // 自己的结果
     btns.forEach(function(b) {
@@ -262,11 +264,11 @@ socket.on('answer_result', function(d) {
     }
   }
   if (d.locked) {
-    // 本题结束（答对锁定 / 答错判罚锁定）：按钮全锁，双车按最新比分就位
+    // 本题结束（答对锁定 / 答错判罚锁定）：按钮全锁，双车按最新比分就位（按角色固定）
     myAnswered = true;
     btns.forEach(function(b){ b.disabled = true; b.classList.add('locked'); });
-    moveCar('me', d.scores[MY_UID] || 0);
-    moveCar('opp', d.scores[oppKey] || 0);
+    moveCar('c', d.scores[CHALLENGER_UID] || 0);
+    moveCar('o', d.scores[oppKey] || 0);
   }
   updateScores(d.scores);
 });
@@ -281,16 +283,15 @@ socket.on('question_timeout', function(d) {
 });
 
 function updateScores(scores) {
-  var keys = Object.keys(scores);
-  var myScore = scores[MY_UID] || 0;
-  var oppScore = scores[keys.find(function(k){return k != MY_UID;})] || 0;
-  document.getElementById('score-me').textContent = myScore;
-  document.getElementById('score-opp').textContent = oppScore;
+  // 比分牌固定顺序：发起方 : 应战方（与车道一致）
+  var oppKey = Object.keys(scores).filter(function(k){return k != CHALLENGER_UID;})[0];
+  document.getElementById('score-c').textContent = scores[CHALLENGER_UID] || 0;
+  document.getElementById('score-o').textContent = scores[oppKey] || 0;
 }
 
 function moveCar(who, score) {
   var pct = Math.min(score / 10 * 90, 90);
-  var car = document.getElementById(who === 'me' ? 'car-me' : 'car-opp');
+  var car = document.getElementById(who === 'c' ? 'car-c' : 'car-o');
   car.style.bottom = pct + '%';
   // 最后一题冲刺加速
   if (score >= 10) car.style.transition = 'bottom 0.3s ease-in';
@@ -349,8 +350,8 @@ socket.on('game_over', function(d) {
   document.getElementById('result-detail').textContent =
     '你答对 ' + myScore + ' 题，对手答对 ' + oppScore + ' 题';
   // 车冲线
-  moveCar('me', 10);
-  moveCar('opp', 10);
+  moveCar('c', 10);
+  moveCar('o', 10);
 });
 
 // 对方掉线：显示横幅；若重连回房间（room_state 到达）横幅自动消失
