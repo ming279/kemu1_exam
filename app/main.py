@@ -1489,12 +1489,12 @@ def pk_challenge():
         flash('对手不存在', 'danger')
         return redirect(url_for('pk_lobby'))
 
-    # 抽10道判断题（PK 用判断题，抢答快）
+    # 抽10道题：判断题 + 单选题混合（单击作答，抢答节奏不变）
     qids = [r['id'] for r in
-            q(f"SELECT id FROM question WHERE qtype='judge' "
+            q(f"SELECT id FROM question WHERE qtype IN ('judge','single') "
               f"ORDER BY RAND() LIMIT {PK_QUESTION_COUNT}")]
     if len(qids) < PK_QUESTION_COUNT:
-        flash('题库判断题不足10道，无法PK', 'danger')
+        flash('题库题目不足10道，无法PK', 'danger')
         return redirect(url_for('pk_lobby'))
 
     pid = execute(
