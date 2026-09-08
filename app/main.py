@@ -15,9 +15,9 @@ import random
 import hashlib
 from functools import wraps
 
-# 生产部署（Linux + gunicorn）时 eventlet 提供 WebSocket 高性能支持；
-# 必须在导入其他第三方库前完成 monkey patch。
-# 本机 Windows 开发环境不装 eventlet，自动跳过（退化为 threading 模式）。
+# 云服务器生产部署用 gunicorn + gevent 提供 WebSocket；
+# 此处仅当本机开发装了 eventlet 时才启用其 monkey patch（可选加速）。
+# 未装 eventlet（如云服务器）则自动跳过，由 gunicorn 的 gevent worker 完成补丁。
 try:
     import eventlet
     eventlet.monkey_patch()
@@ -1967,8 +1967,8 @@ def ai_verify_status(bid):
     return dict(row)
 
 
-# 生产部署（Linux）用 gunicorn + eventlet，不执行本块：
-#   gunicorn --worker-class eventlet -w 1 --bind 0.0.0.0:5000 main:app
+# 生产部署（Linux）用 gunicorn + gevent，不执行本块：
+#   gunicorn --worker-class gevent -w 1 --bind 0.0.0.0:5000 main:app
 # 本机 Windows 开发直接 python main.py（threading 模式）
 if __name__ == '__main__':
     _port = int(os.environ.get('PORT', 5000))
