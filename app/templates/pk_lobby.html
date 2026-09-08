@@ -32,7 +32,13 @@
 
 <div class="card">
   <h3>选择对手发起挑战</h3>
-  <p class="muted">选择一名同学发起 10 题竞速 PK（判断题 + 单选题混合），同题同步、抢答得分，小车冲线决胜负！</p>
+  <p class="muted">选择一名同学发起 10 题竞速 PK，同题同步、抢答得分（答错送对方 1 分），小车冲线决胜负！</p>
+  <div style="display:flex;gap:16px;align-items:center;margin-bottom:10px;background:#f8fafc;border:1px solid #e5e7eb;border-radius:8px;padding:8px 12px;">
+    <b style="font-size:14px;">题型配置：</b>
+    <label style="font-size:14px;">判断题 <input type="number" id="n-judge" value="5" min="0" max="10" style="width:56px;"></label>
+    <label style="font-size:14px;">单选题 <input type="number" id="n-single" value="5" min="0" max="10" style="width:56px;"></label>
+    <span id="type-sum" class="muted" style="font-size:13px;">合计 10 ✓</span>
+  </div>
   {% if not students %}
   <p class="muted">暂无可挑战的同学（需要其他学生注册）。</p>
   {% else %}
@@ -51,10 +57,12 @@
       <td>{{ s.pk_wins or 0 }} / {{ s.pk_losses or 0 }}</td>
       <td>{% if s.win_streak >= 3 %}🔥{{ s.win_streak }}{% else %}—{% endif %}</td>
       <td>
-        <form method="post" action="{{ url_for('pk_challenge') }}" class="inline">
+        <form method="post" action="{{ url_for('pk_challenge') }}" class="inline challenge-form">
           <input type="hidden" name="opponent" value="{{ s.id }}">
+          <input type="hidden" name="judge_count" class="f-judge">
+          <input type="hidden" name="single_count" class="f-single">
           <button type="submit" class="btn small"
-                  onclick="return confirm('向 {{ s.username }} 发起 PK 挑战？')">发起挑战</button>
+                  onclick="return challengeConfirm(this, '{{ s.username }}')">发起挑战</button>
         </form>
       </td>
     </tr>
@@ -120,5 +128,25 @@ function refreshInvites() {
     }).catch(function () {});
 }
 setInterval(refreshInvites, 4000);
+
+// 题型配置：实时校验合计=10，提交时写入各挑战表单
+var nJudge = document.getElementById('n-judge');
+var nSingle = document.getElementById('n-single');
+var sumEl = document.getElementById('type-sum');
+function typeSum() {
+  var a = parseInt(nJudge.value) || 0, b = parseInt(nSingle.value) || 0;
+  sumEl.textContent = '合计 ' + (a + b) + (a + b === 10 ? ' ✓' : ' ✗ 须等于 10');
+  sumEl.style.color = a + b === 10 ? '' : '#dc2626';
+  return a + b === 10;
+}
+nJudge.addEventListener('input', typeSum);
+nSingle.addEventListener('input', typeSum);
+function challengeConfirm(btn, uname) {
+  if (!typeSum()) { alert('判断题 + 单选题数量之和必须等于 10'); return false; }
+  var form = btn.closest('form');
+  form.querySelector('.f-judge').value = parseInt(nJudge.value) || 0;
+  form.querySelector('.f-single').value = parseInt(nSingle.value) || 0;
+  return confirm('向 ' + uname + ' 发起 PK 挑战？（判断题 ' + nJudge.value + ' + 单选题 ' + nSingle.value + '）');
+}
 </script>
 {% endblock %}

@@ -69,7 +69,7 @@
     <!-- 等待/准备阶段 -->
     <div class="card" id="ready-panel">
       <h2>⚔️ {{ my_name }} VS {{ opp_name }}</h2>
-      <p class="muted">10 道判断题/单选题同题竞速，答对一题小车前进 10%，先答对锁定该题！每题 {{ q_time }} 秒。</p>
+      <p class="muted">10 题同题竞速（判断/单选按发起方配置），答对 +1 分；抢答答错送对方 1 分并立即跳下一题！每题 {{ q_time }} 秒。</p>
       <div id="ready-status" class="muted">等待对方加入房间…</div>
       <div style="margin-top:16px;display:flex;gap:12px;align-items:center;">
         <button class="btn" id="btn-ready" style="font-size:18px; padding:12px 32px;">我准备好了</button>
@@ -243,9 +243,10 @@ function submitAnswer(idx, label, btn) {
   document.querySelectorAll('.opt-btn').forEach(function(b){ b.disabled = true; });
 }
 
-// 答题结果
+// 答题结果（答对得分锁定 / 抢答答错送对方1分并锁定）
 socket.on('answer_result', function(d) {
   var btns = document.querySelectorAll('.opt-btn');
+  var oppKey = Object.keys(d.scores).filter(function(k){return k != MY_UID;})[0];
   if (d.uid === MY_UID) {
     // 自己的结果
     btns.forEach(function(b) {
@@ -254,25 +255,20 @@ socket.on('answer_result', function(d) {
     });
     if (d.correct) {
       popFeedback('✓', '#16a34a');
-      moveCar('me', d.scores[MY_UID]);
     } else {
       popFeedback('✗', '#dc2626');
       document.getElementById('play-panel').classList.add('shake');
       setTimeout(function(){ document.getElementById('play-panel').classList.remove('shake'); }, 400);
     }
   }
-  // 对方答对 -> 锁定，自己不能再答
-  if (d.locked && d.uid !== MY_UID) {
+  if (d.locked) {
+    // 本题结束（答对锁定 / 答错判罚锁定）：按钮全锁，双车按最新比分就位
     myAnswered = true;
     btns.forEach(function(b){ b.disabled = true; b.classList.add('locked'); });
-    moveCar('opp', d.scores[Object.keys(d.scores).filter(function(k){return k != MY_UID;})[0]]);
+    moveCar('me', d.scores[MY_UID] || 0);
+    moveCar('opp', d.scores[oppKey] || 0);
   }
   updateScores(d.scores);
-});
-
-// 对方答错（自己还可以答）
-socket.on('opponent_wrong', function(d) {
-  // 可选提示：对方答错了
 });
 
 // 题目超时公布答案
