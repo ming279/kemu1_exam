@@ -13,6 +13,7 @@ llm.py - 加分项③⑥：LLM 答案正确性验证（盲测 + 仲裁）+ token
 - 验证任务后台线程并发执行，进度实时写 verify_batch；服务重启后僵死批次自动标记
 - 成本统计：每次调用的 prompt/completion tokens 与耗时落库，按服务商单价折算费用
 """
+import os
 import re
 import json
 import time
@@ -23,8 +24,11 @@ from concurrent.futures import ThreadPoolExecutor
 from openai import OpenAI
 import pymysql
 
-DB = dict(host='localhost', user='root', password='123456',
-          database='kemu1_exam', charset='utf8mb4',
+DB = dict(host=os.environ.get('DB_HOST', 'localhost'),
+          user=os.environ.get('DB_USER', 'root'),
+          password=os.environ.get('DB_PASSWORD',
+                                  os.environ.get('MYSQL_PASSWORD', '123456')),
+          database=os.environ.get('DB_NAME', 'kemu1_exam'), charset='utf8mb4',
           cursorclass=pymysql.cursors.DictCursor, autocommit=True)
 
 WORKERS = 4              # 并发验证线程数

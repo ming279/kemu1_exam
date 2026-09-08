@@ -27,9 +27,11 @@ from pathlib import Path
 
 BASE = Path(__file__).parent
 CACHE = BASE.parent / 'data_cache'          # 抓取结果缓存（首次在线抓取后落盘）
-DB = dict(host='localhost', user='root',
-          password=os.environ.get('MYSQL_PASSWORD', '123456'),
-          database='kemu1_exam', charset='utf8mb4',
+DB = dict(host=os.environ.get('DB_HOST', 'localhost'),
+          user=os.environ.get('DB_USER', 'root'),
+          password=os.environ.get('DB_PASSWORD',
+                                  os.environ.get('MYSQL_PASSWORD', '123456')),
+          database=os.environ.get('DB_NAME', 'kemu1_exam'), charset='utf8mb4',
           cursorclass=pymysql.cursors.DictCursor, autocommit=True)
 
 UA = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
