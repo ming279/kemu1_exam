@@ -13,6 +13,23 @@
   </div>
 </div>
 
+<div class="card" id="invite-card" style="border:1px solid #fecaca;background:linear-gradient(135deg,#fff1f2,#fee2e2);{% if not invitations %}display:none;{% endif %}">
+  <h3>📨 收到的对战邀请</h3>
+  <div id="invite-list">
+    {% for inv in invitations %}
+    <div style="display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px dashed #fca5a5;">
+      <span><b>{{ inv.c_name }}</b>（{{ inv.c_real or '同学' }}）邀请你进行 PK 对战！</span>
+      <span class="muted">{{ inv.created_at }}</span>
+      <span style="flex:1"></span>
+      <form method="post" action="{{ url_for('pk_decline', pid=inv.id) }}" class="inline">
+        <button type="submit" class="btn small" style="background:#9ca3af;">拒绝</button>
+      </form>
+      <a href="{{ url_for('pk_room', pid=inv.id) }}" class="btn small" style="background:#ef4444;">接受并进入对局 →</a>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+
 <div class="card">
   <h3>选择对手发起挑战</h3>
   <p class="muted">选择一名同学发起 10 题判断题竞速 PK，同题同步、抢答得分，小车冲线决胜负！</p>
@@ -68,4 +85,40 @@
   </table>
   {% endif %}
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='socket.io.min.js') }}"></script>
+<script>
+// 实时邀请：socket 推送秒级刷新 + 4 秒轮询兜底
+var socket = io();
+socket.on('pk_invited', function (d) { refreshInvites(); });
+
+function refreshInvites() {
+  fetch('{{ url_for("pk_invitations") }}')
+    .then(function (r) { return r.json(); })
+    .then(function (d) {
+      var card = document.getElementById('invite-card');
+      var list = document.getElementById('invite-list');
+      if (!d.invitations || !d.invitations.length) {
+        list.innerHTML = '';
+        card.style.display = 'none';
+        return;
+      }
+      card.style.display = '';
+      list.innerHTML = d.invitations.map(function (v) {
+        return '<div style="display:flex;align-items:center;gap:12px;padding:8px 0;'
+             + 'border-bottom:1px dashed #fca5a5;">'
+             + '<span><b>' + v.c_name + '</b>（' + (v.c_real || '同学') + '）邀请你进行 PK 对战！</span>'
+             + '<span class="muted">' + v.created_at + '</span>'
+             + '<span style="flex:1"></span>'
+             + '<form method="post" action="/pk/' + v.id + '/decline" class="inline">'
+             + '<button type="submit" class="btn small" style="background:#9ca3af;">拒绝</button></form>'
+             + '<a href="/pk/' + v.id + '" class="btn small" style="background:#ef4444;">接受并进入对局 →</a>'
+             + '</div>';
+      }).join('');
+    }).catch(function () {});
+}
+setInterval(refreshInvites, 4000);
+</script>
 {% endblock %}
