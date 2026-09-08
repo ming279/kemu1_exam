@@ -1616,9 +1616,15 @@ def socket_connect():
 @socketio.on('disconnect')
 def socket_disconnect():
     uid = ONLINE_SIDS.pop(request.sid, None)
-    # 通知所在房间的对手
-    for key, room in PK_ROOMS.items():
-        if uid in (room['challenger'], room['opponent']):
+    if uid is None:
+        return
+    # 通知所在房间的对手（仅当断开的是该用户当前绑定的连接才算真正离开；
+    # 多页签旧连接、重连后的僵尸连接不计入，避免误报"对方已离开"）
+    for key, room in list(PK_ROOMS.items()):
+        if uid in (room['challenger'], room['opponent']) \
+                and room['sids'].get(uid) == request.sid:
+            room['sids'].pop(uid, None)
+            room['ready'].discard(uid)
             other = room['opponent'] if uid == room['challenger'] else room['challenger']
             emit('opponent_left', {'uid': uid}, room=key)
 
