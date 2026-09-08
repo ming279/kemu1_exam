@@ -40,6 +40,10 @@
 @keyframes flashG { 0%{background:#dcfce7;} 100%{background:transparent;} }
 </style>
 
+<div id="opp-banner" style="display:none;position:fixed;top:70px;left:50%;transform:translateX(-50%);z-index:999;align-items:center;gap:10px;background:#7f1d1d;color:#fff;padding:10px 18px;border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.35);">
+  <span>⚠ 对手暂时离开，等待其重新连接…（对局不会丢失）</span>
+</div>
+
 <div class="pk-wrap">
   <!-- 左侧：竖向赛道 40% -->
   <div class="pk-track" id="pk-track">
@@ -117,6 +121,8 @@ socket.on('room_state', function(d) {
   var readyCount = d.players.filter(function(p){return p.ready;}).length;
   document.getElementById('ready-status').textContent =
     '准备状态：' + readyCount + '/2 人已准备';
+  var b = document.getElementById('opp-banner');
+  if (b) b.style.display = 'none';
 });
 
 socket.on('player_ready', function(d) {
@@ -308,9 +314,10 @@ socket.on('game_over', function(d) {
   moveCar('opp', 10);
 });
 
-// 对方掉线
+// 对方掉线：显示横幅；若重连回房间（room_state 到达）横幅自动消失
 socket.on('opponent_left', function() {
-  alert('对方已离开房间');
+  var b = document.getElementById('opp-banner');
+  if (b) b.style.display = 'flex';
 });
 
 // 烟花
