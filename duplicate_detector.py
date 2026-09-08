@@ -12,6 +12,7 @@ duplicate_detector.py - 加分项②：题库重复题检测
 用法：python duplicate_detector.py [root密码]
 """
 import sys
+import os
 import re
 import getpass
 from collections import Counter, defaultdict
@@ -21,7 +22,7 @@ import jieba
 import pymysql
 
 BASE = Path(__file__).parent
-DB_NAME = 'kemu1_exam'
+DB_NAME = os.environ.get('DB_NAME', 'kemu1_exam')
 REPORT = BASE / 'duplicate_report.md'
 
 MIN_SHARED_SHINGLE = 8     # 候选对最少共同 2-gram 数
@@ -77,10 +78,14 @@ class DSU:
         self.p[self.find(a)] = self.find(b)
 
 
-def main(password):
-    conn = pymysql.connect(host='localhost', user='root', password=password,
-                           database=DB_NAME, charset='utf8mb4',
-                           cursorclass=pymysql.cursors.DictCursor)
+def main(password=None):
+    conn = pymysql.connect(
+        host=os.environ.get('DB_HOST', 'localhost'),
+        user=os.environ.get('DB_USER', 'root'),
+        password=password or os.environ.get('DB_PASSWORD',
+                                            os.environ.get('MYSQL_PASSWORD', '123456')),
+        database=DB_NAME, charset='utf8mb4',
+        cursorclass=pymysql.cursors.DictCursor)
     with conn.cursor() as cur:
         cur.execute("SELECT id, source_id, stem, qtype FROM question ORDER BY id")
         questions = cur.fetchall()
@@ -175,5 +180,7 @@ def main(password):
 
 if __name__ == '__main__':
     sys.stdout.reconfigure(encoding='utf-8')
-    pwd = sys.argv[1] if len(sys.argv) > 1 else getpass.getpass('MySQL root 密码: ')
+    pwd = sys.argv[1] if len(sys.argv) > 1 else os.environ.get('DB_PASSWORD')
+    if not pwd:
+        pwd = getpass.getpass('MySQL root 密码: ')
     main(pwd)
