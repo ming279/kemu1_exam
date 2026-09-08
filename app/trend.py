@@ -7,12 +7,16 @@ trend.py - 加分项⑤：历年题库对比趋势分析（共享数据层）
   - question.year_version 标记题库年份（采集增量与原库 docx）
   - question.category_id 为加分项①的自动归类结果
 """
+import os
 from collections import Counter, defaultdict
 
 import pymysql
 
-DB = dict(host='localhost', user='root', password='123456',
-          database='kemu1_exam', charset='utf8mb4',
+DB = dict(host=os.environ.get('DB_HOST', 'localhost'),
+          user=os.environ.get('DB_USER', 'root'),
+          password=os.environ.get('DB_PASSWORD',
+                                  os.environ.get('MYSQL_PASSWORD', '123456')),
+          database=os.environ.get('DB_NAME', 'kemu1_exam'), charset='utf8mb4',
           cursorclass=pymysql.cursors.DictCursor)
 
 QTYPES = ['judge', 'single', 'multi']
