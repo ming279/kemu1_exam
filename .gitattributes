@@ -1,0 +1,2 @@
+# Shell 部署脚本必须使用 LF 行尾，否则 Linux 上执行报 /usr/bin/env bash^M 错误
+*.sh text eol=lf
