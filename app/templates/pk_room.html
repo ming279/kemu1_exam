@@ -163,6 +163,18 @@ function resizeCanvas(){
 window.addEventListener('resize', resizeCanvas);
 resizeCanvas();
 
+// 沥青纹理（离屏生成一次，平铺 + 随滚动位移）
+var asphaltPat = (function(){
+  var c = document.createElement('canvas'); c.width = 64; c.height = 64;
+  var g = c.getContext('2d');
+  g.fillStyle = '#0b1220'; g.fillRect(0, 0, 64, 64);
+  for (var i = 0; i < 260; i++){
+    g.fillStyle = 'rgba(255,255,255,' + (Math.random()*0.05).toFixed(3) + ')';
+    g.fillRect(Math.random()*64, Math.random()*64, 1.4, 1.4);
+  }
+  return ctx.createPattern(c, 'repeat');
+})();
+
 // 车道与角色固定：c=发起方左道红车，o=应战方右道蓝车
 var cars = {
   c:{ p:0, dp:0, combo:0, smokeT:0, shakeT:0, flameT:0 },
@@ -230,60 +242,73 @@ function spawnConfettiOne(){
     sway:Math.random()*6.28 });
 }
 
-/* ---- 矢量卡丁车 ---- */
+/* ---- F1 赛车（车头朝上） ---- */
+function wheel(x, y, s){
+  ctx.fillStyle = '#0f0f10';
+  rr(x-5.5*s, y-7*s, 11*s, 14*s, 3*s);
+  ctx.fillStyle = '#4b5563';
+  rr(x-3*s, y-4.5*s, 6*s, 9*s, 2*s);
+}
 function drawCar(side){
   var car = cars[side], s = carScale();
   var x = laneX(side);
   var y = carY(car.dp);
   if (car.shakeT > 0) y += Math.sin(race.time*35)*3;   // 抛锚颠簸
-  var body = side==='c' ? '#e74c3c' : '#3b82f6';
-  var dark = side==='c' ? '#b91c1c' : '#1d4ed8';
+  var body = side==='c' ? '#ef4444' : '#3b82f6';
+  var dark = side==='c' ? '#991b1b' : '#1e40af';
 
   ctx.save();
   ctx.translate(x, y);
   if (car.shakeT > 0) ctx.rotate(Math.sin(race.time*35)*0.06);
   // 车影
-  ctx.fillStyle = 'rgba(0,0,0,.35)';
-  ctx.beginPath(); ctx.ellipse(2, 26*s, 20*s, 6*s, 0, 0, 6.29); ctx.fill();
+  ctx.fillStyle = 'rgba(0,0,0,.38)';
+  ctx.beginPath(); ctx.ellipse(0, 28*s, 24*s, 6.5*s, 0, 0, 6.29); ctx.fill();
   // COMBO 光环（作用于车身）
-  if (car.combo >= 2){ ctx.shadowColor = body; ctx.shadowBlur = 18; }
-  // 四轮（滚动微颤）
-  ctx.fillStyle = '#0f0f10';
-  var wob = Math.sin(race.time*22 + (side==='c'?0:2))*1.2;
-  rr(-19*s, -20*s+wob, 7*s, 13*s, 2); rr(12*s, -20*s-wob, 7*s, 13*s, 2);
-  rr(-19*s, 8*s-wob, 7*s, 13*s, 2);  rr(12*s, 8*s+wob, 7*s, 13*s, 2);
-  // 尾翼
-  ctx.fillStyle = dark; rr(-17*s, 20*s, 34*s, 5*s, 2);
-  // 车身（前窄后宽的卡丁车造型）
-  var grad = ctx.createLinearGradient(0,-30*s,0,26*s);
-  grad.addColorStop(0, body); grad.addColorStop(1, dark);
-  ctx.fillStyle = grad;
+  if (car.combo >= 2){ ctx.shadowColor = body; ctx.shadowBlur = 20; }
+  // 后翼
+  ctx.fillStyle = dark; rr(-20*s, 20*s, 40*s, 7*s, 2);
+  ctx.fillStyle = 'rgba(255,255,255,.3)'; rr(-20*s, 20*s, 40*s, 2*s, 1);
+  // 后轮（大）
+  wheel(-21*s, 13*s, s);
+  wheel(21*s, 13*s, s);
+  // 侧箱（中部主体）
+  ctx.fillStyle = body;
+  rr(-11*s, -5*s, 22*s, 19*s, 5*s);
+  // 前轮（小）
+  wheel(-18*s, -14*s, s*0.85);
+  wheel(18*s, -14*s, s*0.85);
+  // 鼻锥（顶部收尖）
+  ctx.fillStyle = body;
   ctx.beginPath();
-  ctx.moveTo(-13*s, -28*s); ctx.lineTo(13*s, -28*s);      // 前鼻
-  ctx.quadraticCurveTo(17*s, -20*s, 16*s, -6*s);
-  ctx.lineTo(16*s, 18*s); ctx.quadraticCurveTo(14*s, 24*s, 8*s, 24*s);
-  ctx.lineTo(-8*s, 24*s); ctx.quadraticCurveTo(-14*s, 24*s, -16*s, 18*s);
-  ctx.lineTo(-16*s, -6*s); ctx.quadraticCurveTo(-17*s, -20*s, -13*s, -28*s);
+  ctx.moveTo(-6.5*s, -29*s); ctx.lineTo(6.5*s, -29*s);
+  ctx.quadraticCurveTo(10*s, -16*s, 10*s, -6*s);
+  ctx.lineTo(-10*s, -6*s);
+  ctx.quadraticCurveTo(-10*s, -16*s, -6.5*s, -29*s);
   ctx.fill();
   ctx.shadowBlur = 0;
-  // 挡风玻璃
-  ctx.fillStyle = 'rgba(255,255,255,.55)';
-  rr(-9*s, -18*s, 18*s, 9*s, 3);
-  // 车手头盔
-  ctx.fillStyle = '#f8fafc';
-  ctx.beginPath(); ctx.arc(0, 2*s, 6.5*s, 0, 6.29); ctx.fill();
-  ctx.fillStyle = body;
-  ctx.fillRect(-6.5*s, 1*s, 13*s, 2.2*s);
-  // 前车灯
-  ctx.fillStyle = '#fef08a';
-  rr(-11*s, -27*s, 6*s, 3.5*s, 1.5); rr(5*s, -27*s, 6*s, 3.5*s, 1.5);
+  // 前翼
+  ctx.fillStyle = dark; rr(-17*s, -33*s, 34*s, 4.5*s, 2);
+  // 涂装高光条纹
+  ctx.fillStyle = 'rgba(255,255,255,.4)';
+  rr(-2.6*s, -27*s, 3.2*s, 40*s, 1.6*s);
+  // 座舱开口
+  ctx.fillStyle = '#111827';
+  ctx.beginPath(); ctx.ellipse(0, 4*s, 8*s, 10*s, 0, 0, 6.29); ctx.fill();
+  // 头盔（带涂装条）
+  ctx.fillStyle = side==='c' ? '#fde047' : '#f0abfc';
+  ctx.beginPath(); ctx.arc(0, 3*s, 5.5*s, 0, 6.29); ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,.65)';
+  ctx.fillRect(-5*s, 1.2*s, 10*s, 2*s);
+  // halo 保护弧
+  ctx.strokeStyle = 'rgba(255,255,255,.55)'; ctx.lineWidth = 1.6*s;
+  ctx.beginPath(); ctx.arc(0, 4*s, 8.5*s, Math.PI*0.95, Math.PI*2.05); ctx.stroke();
   // 氮气尾焰（持续帧）
   if (car.flameT > 0){
     var fl = 8 + Math.random()*10;
     ctx.fillStyle = '#f97316';
-    ctx.beginPath(); ctx.ellipse(0, 27*s + fl/2, 5*s, fl, 0, 0, 6.29); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(0, 29*s + fl/2, 5*s, fl, 0, 0, 6.29); ctx.fill();
     ctx.fillStyle = '#fde68a';
-    ctx.beginPath(); ctx.ellipse(0, 26*s + fl/3, 2.5*s, fl/2, 0, 0, 6.29); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(0, 28*s + fl/3, 2.5*s, fl/2, 0, 0, 6.29); ctx.fill();
   }
   ctx.restore();
   // COMBO 气泡
@@ -293,9 +318,9 @@ function drawCar(side){
     var txt = 'COMBO ×' + car.combo;
     var tw = ctx.measureText(txt).width;
     ctx.fillStyle = 'rgba(0,0,0,.65)';
-    rr(x - tw/2 - 6, y - 52*s, tw + 12, 18, 9);
+    rr(x - tw/2 - 6, y - 56*s, tw + 12, 18, 9);
     ctx.fillStyle = '#fbbf24';
-    ctx.fillText(txt, x, y - 39*s);
+    ctx.fillText(txt, x, y - 43*s);
     ctx.restore();
   }
 }
@@ -321,9 +346,27 @@ function drawScene(){
   // 路面外的"草地"
   ctx.fillStyle = '#152238';
   ctx.fillRect(0, 0, W, H);
-  // 路面
-  ctx.fillStyle = '#0b1220';
-  ctx.fillRect(roadL, 0, roadR-roadL, H);
+
+  // 路面：底色 + 沥青颗粒纹理 + 轮胎磨痕（裁剪到路面区域）
+  ctx.save();
+  ctx.beginPath(); ctx.rect(roadL, 0, roadR-roadL, H); ctx.clip();
+  ctx.fillStyle = asphaltPat;
+  ctx.save();
+  ctx.translate(0, race.scroll % 64);
+  ctx.fillRect(roadL, -64, roadR-roadL, H+128);
+  ctx.restore();
+  // 两车道中心的轮胎磨痕
+  ctx.fillStyle = 'rgba(0,0,0,.30)';
+  [laneX('c'), laneX('o')].forEach(function(lx){ rr(lx-7, -12, 14, H+24, 7); });
+  // 起跑线（底部固定棋盘格）
+  var cell = 12, gy = H-32;
+  for (var sx = roadL, ci = 0; sx < roadR-1; sx += cell, ci++){
+    for (var r2 = 0; r2 < 2; r2++){
+      ctx.fillStyle = (ci + r2) % 2 ? '#f8fafc' : '#111827';
+      ctx.fillRect(sx, gy + r2*cell, Math.min(cell, roadR-sx), cell);
+    }
+  }
+  ctx.restore();
 
   // 路肩红白条纹（kerb），随滚动移动
   var seg = 18, off = race.scroll % (seg*2);
@@ -343,11 +386,19 @@ function drawScene(){
   [roadL+34, roadR-34].forEach(function(x){
     ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,H); ctx.stroke();
   });
-  // 行道树（两侧草地，滚动循环）
+
+  // 路侧装饰：行道树 / 灯杆 / 广告牌 / 观众（随滚动循环）
   var spacing = 95;
   for (var i=0; i<7; i++){
     var ty = (H + spacing) - ((race.scroll + i*spacing) % (H + spacing));
-    drawTree(roadL-22, ty); drawTree(roadR+22, ty + spacing/2);
+    if (i % 2 === 0){
+      drawTree(roadL-24, ty); drawTree(roadR+24, ty + spacing/2);
+      drawStone(roadL-18, ty + spacing*0.6);
+    } else {
+      drawLamp(roadL-14, ty); drawCrowd(roadL-34, ty + 14);
+      drawBillboard(roadR+14, ty + 30);
+      drawCrowd(roadR+8, ty - 18);
+    }
   }
 
   // 终点线（顶部横条纹）
@@ -408,6 +459,49 @@ function drawTree(x, y){
   ctx.beginPath(); ctx.moveTo(x, y-34); ctx.lineTo(x-8, y-14); ctx.lineTo(x+8, y-14); ctx.closePath(); ctx.fill();
   ctx.fillStyle = '#7c5b3a';
   ctx.fillRect(x-2.5, y-4, 5, 8);
+}
+function drawStone(x, y){
+  ctx.fillStyle = '#3b4a63';
+  ctx.beginPath(); ctx.ellipse(x, y-3, 7, 4.5, 0, 0, 6.29); ctx.fill();
+  ctx.fillStyle = '#4b5b78';
+  ctx.beginPath(); ctx.ellipse(x-1.5, y-5, 4, 2.5, 0, 0, 6.29); ctx.fill();
+}
+function drawLamp(x, y){
+  // 光晕
+  ctx.fillStyle = 'rgba(253,224,71,.10)';
+  ctx.beginPath(); ctx.arc(x, y-38, 13, 0, 6.29); ctx.fill();
+  // 灯杆与灯头
+  ctx.fillStyle = '#64748b';
+  ctx.fillRect(x-1.5, y-36, 3, 36);
+  ctx.fillStyle = '#fde047';
+  ctx.beginPath(); ctx.arc(x, y-38, 4.5, 0, 6.29); ctx.fill();
+}
+function drawBillboard(x, y){
+  // 柱子
+  ctx.fillStyle = '#94a3b8';
+  ctx.fillRect(x-2.5, y-2, 5, 16);
+  // 板面
+  ctx.fillStyle = '#f8fafc';
+  rr(x-22, y-24, 44, 22, 3);
+  ctx.strokeStyle = '#334155'; ctx.lineWidth = 1.5;
+  ctx.strokeRect(x-22, y-24, 44, 22);
+  // 广告词
+  ctx.font = 'bold 9px sans-serif'; ctx.textAlign = 'center';
+  ctx.fillStyle = '#dc2626';
+  ctx.fillText('科目一', x, y-14);
+  ctx.fillStyle = '#1d4ed8';
+  ctx.fillText('一把过！', x, y-5);
+}
+function drawCrowd(x, y){
+  var shirts = ['#f59e0b','#10b981','#ec4899'];
+  for (var i=0; i<3; i++){
+    var px = x + i*11, py = y + (i%2)*3;
+    ctx.fillStyle = shirts[i];
+    ctx.fillRect(px-3.5, py-8, 7, 8);                        // 身体
+    ctx.beginPath(); ctx.arc(px, py-11, 3.2, 0, 6.29); ctx.fill();  // 头
+    var wave = Math.sin(race.time*6 + i)*2;                  // 挥舞的手臂
+    ctx.fillRect(px+3.5, py-9-wave, 2.5, 3.5);
+  }
 }
 function drawFlag(x, y){
   var wave = race.finished ? race.time*6 : race.time*2;
@@ -599,6 +693,7 @@ socket.on('countdown', function(d) {
   SFX.count();
 });
 socket.on('go', function() {
+  race.lightsN = 0;       // 熄灭红灯（否则会一直显示）
   race.greenT = 1.1;      // 全绿灯亮 1.1 秒（drawLights 由 greenT 驱动）
   race.started = true;
   SFX.go();
