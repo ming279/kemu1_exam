@@ -13,6 +13,7 @@ main.py - 驾照科目一题库管理与模拟考试系统（B/S 架构，Flask�
 import os
 import random
 import hashlib
+import secrets
 from functools import wraps
 
 # 云服务器生产部署用 gunicorn + gevent 提供 WebSocket；
@@ -83,10 +84,29 @@ def execute(sql, args=()):
 
 
 # ---------------- 登录控制 ----------------
+# 登录互踢：同一账号每次登录生成新 token 写入 user.login_token，
+# 旧浏览器 session 中 token 与之不匹配即视为被挤下线（防同账号多人登录串号）
+def _login_valid(uid):
+    """校验当前会话 token 是否仍为该账号最新登录，返回 bool"""
+    row = q("SELECT login_token FROM `user` WHERE id=%s", (uid,), one=True)
+    return not (row and row['login_token']
+                and row['login_token'] != session.get('token'))
+
+
+def _kick_session():
+    """被挤下线时给出提示（去重，避免每次跳转重复 flash）"""
+    if not session.get('login_kicked'):
+        session['login_kicked'] = True
+        flash('您的账号已在其他设备登录，当前会话已下线', 'warning')
+
+
 def login_required(f):
     @wraps(f)
     def wrapper(*args, **kwargs):
         if 'uid' not in session:
+            return redirect(url_for('login'))
+        if not _login_valid(session['uid']):
+            _kick_session()
             return redirect(url_for('login'))
         return f(*args, **kwargs)
     return wrapper
@@ -94,6 +114,8 @@ def login_required(f):
 
 def current_user():
     if 'uid' not in session:
+        return None
+    if not _login_valid(session['uid']):
         return None
     return q("SELECT id, username, real_name, role FROM `user` WHERE id=%s",
              (session['uid'],), one=True)
@@ -157,7 +179,13 @@ def login():
         row = q("SELECT id, password_hash FROM `user` WHERE username=%s",
                 (username,), one=True)
         if row and row['password_hash'] == sha256(request.form['password']):
+            # 登录互踢：生成新 token，旧会话将因 token 不匹配被下线
+            token = secrets.token_hex(16)
+            execute("UPDATE `user` SET login_token=%s WHERE id=%s",
+                    (token, row['id']))
             session['uid'] = row['id']
+            session['token'] = token
+            session.pop('login_kicked', None)
             return redirect(url_for('index'))
         flash('账号或密码错误', 'danger')
     return render_template('login.html')
@@ -1619,9 +1647,17 @@ def pk_room(pid):
 
 
 # ---- WebSocket 事件 ----
+def _session_uid():
+    """socket 事件专用的会话校验：账号在其他设备登录后，旧会话无效"""
+    uid = _session_uid()
+    if uid is None:
+        return None
+    return uid if _login_valid(uid) else None
+
+
 @socketio.on('connect')
 def socket_connect():
-    if 'uid' in session:
+    if _session_uid() is not None:
         ONLINE_SIDS[request.sid] = session['uid']
 
 
@@ -1660,7 +1696,7 @@ def pk_join(data):
             'scores': {rec['challenger_uid']: 0, rec['opponent_uid']: 0},
             'answers': {}, 'answered': {}, 'ready': set(), 'sids': {},
         }
-    uid = session.get('uid')
+    uid = _session_uid()
     if uid not in (room['challenger'], room['opponent']):
         return
     join_room(key)
@@ -1682,7 +1718,7 @@ def pk_ready(data):
     room = PK_ROOMS.get(key)
     if not room:
         return
-    uid = session.get('uid')
+    uid = _session_uid()
     if uid not in (room['challenger'], room['opponent']):
         return
     room['ready'].add(uid)
@@ -1754,7 +1790,7 @@ def pk_answer(data):
     room = PK_ROOMS.get(key)
     if not room or room['status'] != 'playing':
         return
-    uid = session.get('uid')
+    uid = _session_uid()
     if uid not in (room['challenger'], room['opponent']):
         return
     if idx != room['current_q']:
@@ -1806,7 +1842,7 @@ def pk_emoji(data):
     room = PK_ROOMS.get(key)
     if not room:
         return
-    uid = session.get('uid')
+    uid = _session_uid()
     if uid not in (room['challenger'], room['opponent']):
         return
     other = room['opponent'] if uid == room['challenger'] else room['challenger']
@@ -1860,7 +1896,7 @@ def pk_concede(data):
     room = PK_ROOMS.get(key)
     if not room or room['status'] != 'playing':
         return
-    uid = session.get('uid')
+    uid = _session_uid()
     if uid not in (room['challenger'], room['opponent']):
         return
     other = room['opponent'] if uid == room['challenger'] else room['challenger']
@@ -1877,7 +1913,7 @@ def pk_leave(data):
     if not room:
         emit('room_closed', room=request.sid)
         return
-    uid = session.get('uid')
+    uid = _session_uid()
     if uid not in (room['challenger'], room['opponent']):
         return
     if room['status'] == 'playing':
