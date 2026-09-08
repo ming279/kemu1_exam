@@ -12,6 +12,7 @@ importer.py - 题库导入器：解析 docx -> MySQL (kemu1_exam)
 用法：python importer.py [root密码]
 """
 import sys
+import os
 import hashlib
 import getpass
 from pathlib import Path
@@ -25,14 +26,22 @@ BASE = Path(__file__).parent
 DOCX = next(BASE.glob('题库_2026.docx'))
 SCHEMA = BASE / 'sql' / 'schema.sql'
 
-DB_NAME = 'kemu1_exam'
+DB_NAME = os.environ.get('DB_NAME', 'kemu1_exam')
+
+
+def _db_kwargs(password):
+    """连接基础参数：环境变量优先（服务器部署），密码参数/默认值兜底（本机开发）"""
+    return dict(host=os.environ.get('DB_HOST', 'localhost'),
+                user=os.environ.get('DB_USER', 'root'),
+                password=password or os.environ.get('DB_PASSWORD',
+                                                    os.environ.get('MYSQL_PASSWORD', '123456')))
 
 
 def run_schema(password):
     """执行建库脚本（schema.sql 含 DROP/CREATE DATABASE）"""
     from pymysql.constants import CLIENT
     sql = SCHEMA.read_text(encoding='utf-8')
-    conn = pymysql.connect(host='localhost', user='root', password=password,
+    conn = pymysql.connect(**_db_kwargs(password),
                            charset='utf8mb4',
                            client_flag=CLIENT.MULTI_STATEMENTS)
     try:
@@ -59,7 +68,7 @@ def import_all(password):
         images[name] = (h, mime, len(data), data)
     print(f'       去重后图片: {len(images)} 张')
 
-    conn = pymysql.connect(host='localhost', user='root', password=password,
+    conn = pymysql.connect(**_db_kwargs(password),
                            database=DB_NAME, charset='utf8mb4',
                            autocommit=False)
     try:
@@ -123,7 +132,7 @@ def import_all(password):
 
 def verify(password):
     """完整性校验"""
-    conn = pymysql.connect(host='localhost', user='root', password=password,
+    conn = pymysql.connect(**_db_kwargs(password),
                            database=DB_NAME, charset='utf8mb4')
     try:
         with conn.cursor() as cur:
@@ -181,7 +190,9 @@ def verify(password):
 
 
 if __name__ == '__main__':
-    pwd = sys.argv[1] if len(sys.argv) > 1 else getpass.getpass('MySQL root 密码: ')
+    pwd = sys.argv[1] if len(sys.argv) > 1 else os.environ.get('DB_PASSWORD')
+    if not pwd:
+        pwd = getpass.getpass('MySQL root 密码: ')
     run_schema(pwd)
     import_all(pwd)
     verify(pwd)
