@@ -12,6 +12,7 @@ classifier.py - 加分项①：题目自动归类
 用法：python classifier.py [root密码]
 """
 import sys
+import os
 import math
 import getpass
 from pathlib import Path
@@ -21,7 +22,7 @@ import jieba
 import pymysql
 
 BASE = Path(__file__).parent
-DB_NAME = 'kemu1_exam'
+DB_NAME = os.environ.get('DB_NAME', 'kemu1_exam')
 sys.path.insert(0, str(BASE))
 
 # ---------------------------------------------------------------
@@ -143,11 +144,15 @@ def cosine(v1, v2):
     return dot / (n1 * n2) if n1 and n2 else 0.0
 
 
-def main(password):
-    conn = pymysql.connect(host='localhost', user='root', password=password,
-                           database=DB_NAME, charset='utf8mb4',
-                           cursorclass=pymysql.cursors.DictCursor,
-                           autocommit=False)
+def main(password=None):
+    conn = pymysql.connect(
+        host=os.environ.get('DB_HOST', 'localhost'),
+        user=os.environ.get('DB_USER', 'root'),
+        password=password or os.environ.get('DB_PASSWORD',
+                                            os.environ.get('MYSQL_PASSWORD', '123456')),
+        database=DB_NAME, charset='utf8mb4',
+        cursorclass=pymysql.cursors.DictCursor,
+        autocommit=False)
     try:
         with conn.cursor() as cur:
             cur.execute("SELECT id, stem FROM question")
@@ -232,5 +237,7 @@ def main(password):
 
 if __name__ == '__main__':
     sys.stdout.reconfigure(encoding='utf-8')
-    pwd = sys.argv[1] if len(sys.argv) > 1 else getpass.getpass('MySQL root 密码: ')
+    pwd = sys.argv[1] if len(sys.argv) > 1 else os.environ.get('DB_PASSWORD')
+    if not pwd:
+        pwd = getpass.getpass('MySQL root 密码: ')
     main(pwd)
