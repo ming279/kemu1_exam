@@ -25,7 +25,7 @@ v2 版本面向**课堂教学场景**扩展了 7 个教学功能（教师发布�
 | ④ | **错题排行榜** | 全局或按任务筛选，统计错次、错误率、常见错误答案；配 TOP10 错误率条形图、题型玫瑰图、错误答案环形图、错误率区间饼图 |
 | ⑤ | **学生排名** | 考试榜按平均分、练习榜按总正确题数；前三名奖牌、PK 段位徽章（青铜/白银/黄金/铂金）、连胜火焰；配成绩分段柱状图与 PK 胜负饼图 |
 | ⑥ | **答案解析** | 见核心功能：题目管理维护解析，讲评页展示 |
-| ⑦ | **双人 PK 赛车** | 基于 flask-socketio 的实时对战：10 道判断题抢答、15 秒/题、答对小车前进、3-2-1 倒计时、快捷表情包、胜利烟花、胜方段位战绩更新；服务监听 `0.0.0.0` 支持局域网双人联机 |
+| ⑦ | **双人 PK 赛车** | 基于 flask-socketio 的实时对战：发起方可自定义题型（判断题/单选题各若干，合计 10 题、交错出场）、15 秒/题、答对小车前进、3-2-1 倒计时、快捷表情包、胜利烟花、抢答答错直接送对方 1 分并跳下一题、胜方段位战绩更新；服务监听 `0.0.0.0` 支持公网/局域网双人联机 |
 
 **数据可视化（ECharts，共 14 图）**：错题排行榜 4 图、全局统计 5 图、我的统计 3 图、学生排名 2 图，涵盖横向条形图、南丁格尔玫瑰图、环形/饼图、面积折线图、仪表盘、堆叠柱状图、渐变柱状图 7 种类型；echarts.min.js 本地引用，无外链依赖。
 
@@ -72,7 +72,8 @@ Token 用量与费用汇总、一键导出验证报告（`answer_report.md`）�
 ## 技术栈
 
 - Python 3.10+ / Flask 3.x
-- **flask-socketio**（双人 PK 实时通信，threading 模式，无需 eventlet）
+- **flask-socketio**（双人 PK 实时通信，async 模式自动适配：开发机 threading / 生产 gevent）
+- **gunicorn + gevent**（生产部署 WSGI，systemd 托管，见"云服务器部署"章节）
 - MySQL 8.0（pymysql 驱动）
 - **openpyxl**（Excel 导出：样式/标红/列宽）
 - **ECharts 5.5**（前端图表，本地 `app/static/echarts.min.js` 引用）
@@ -98,13 +99,16 @@ Token 用量与费用汇总、一键导出验证报告（`answer_report.md`）�
 │       ├── admin_answer_data.html # ③ 答题数据导出（5 场景 × CSV/Excel）
 │       ├── admin_questions.html   # ⑥ 题目管理（答案解析编辑）
 │       ├── ranking.html           # ⑤ 学生排名 + 分段柱状图/PK 饼图
-│       ├── pk_lobby.html / pk_room.html  # ⑦ 双人 PK 大厅 / 赛车房间
+│       ├── pk_lobby.html / pk_room.html  # ⑦ 双人 PK 大厅（题型配置）/ 赛车房间
 │       ├── admin_stats.html / stats.html # 全局统计 5 图 / 我的统计 3 图
 │       └── ...                    # 考试/练习/AI 验证/采集等
+├── deploy/
+│   ├── deploy.sh            # 云服务器一键部署（MySQL+venv+gunicorn+systemd）
+│   └── update.sh            # 代码更新：拉取（自动降权）→ 同步依赖 → 重启 → 健康检查
 ├── sql/
 │   ├── schema.sql           # 建库脚本（18 张基表 + v_user_stat / v_question_stat 视图）
 │   ├── migration_v2.sql     # v2 增量迁移：task/task_record/pk_challenge 表 + 解析/PK 战绩字段
-│   └── kemu1_exam_backup.sql# 全量 mysqldump 备份（含题目与图片 BLOB）
+│   └── kemu1_exam_backup.sql.gz # 全量 mysqldump 备份（--hex-blob 导出，含题目与图片 BLOB）
 ├── docx_parser.py           # 解析 题库_2026.docx → 结构化题目（以"答案："为锚点切题）
 ├── importer.py              # 建表 + 题目/选项/图片批量入库（SHA-256 图片去重）
 ├── classifier.py            # 加分项①：题目自动归类
@@ -197,14 +201,10 @@ ai_verification（question_id+model 唯一）   import_batch（采集批次）
 
 ### 1. 准备数据库
 
-方式 A：导入全量备份（推荐，含全部题目与图片数据）：
-
-```sql
-CREATE DATABASE kemu1_exam DEFAULT CHARACTER SET utf8mb4;
-```
+方式 A：导入全量备份（推荐，含全部题目与图片数据，备份自带建库语句）：
 
 ```bash
-mysql -u root -p kemu1_exam < sql/kemu1_exam_backup.sql
+gunzip -c sql/kemu1_exam_backup.sql.gz | mysql -u root -p --max-allowed-packet=512M
 ```
 
 方式 B：仅建空库结构，再从 docx 重新导入：
@@ -225,7 +225,7 @@ pip install flask flask-socketio pymysql openpyxl lxml python-docx jieba openai 
 
 ### 3. 修改数据库连接
 
-`app/main.py` 与各脚本中的连接参数默认为 `root / 123456 / kemu1_exam`，按需修改（支持环境变量 `MYSQL_PASSWORD`）。
+连接参数通过环境变量配置：`DB_HOST` / `DB_USER` / `DB_PASSWORD` / `DB_NAME`（本机开发默认 `localhost / root / 123456 / kemu1_exam`，密码兼容旧变量 `MYSQL_PASSWORD`）；云服务器部署由 `/etc/kemu1.env` 统一注入，无需改代码。
 
 ### 4. 启动
 
@@ -237,6 +237,30 @@ python app/main.py
 访问 http://127.0.0.1:5000 ，内置管理员账号：**admin / admin123**（可注册考生账号）。
 
 > 若从旧版升级，先执行 v2 增量迁移：`mysql -u root -p kemu1_exam < sql/migration_v2.sql`（新导入的全量备份已含全部表结构，无需迁移）。
+
+## 云服务器部署（Ubuntu 22.04/24.04）
+
+### 一键部署
+
+```bash
+git clone https://github.com/ming279/kemu1_exam.git
+cd kemu1_exam
+sudo bash deploy/deploy.sh
+```
+
+脚本自动完成：安装 MySQL 8 → 导入题库备份（2308 题 + 图片 BLOB）→ 创建专用数据库账号（随机密码）→ venv 安装依赖（含 gunicorn + gevent）→ 写入环境配置 `/etc/kemu1.env`（chmod 600）→ 注册 systemd 服务 `kemu1`（开机自启、崩溃重启）→ 防火墙放行 5000 → 健康检查并输出访问地址。
+
+- 生产运行方式：`gunicorn --worker-class gevent -w 1 --bind 0.0.0.0:5000 main:app`。选用 gevent 是因为 gunicorn v23+ 已移除 eventlet worker，WebSocket 由 gevent 提供
+- 腾讯云轻量服务器还需在**云控制台防火墙标签页**放行 TCP 5000 端口（系统内 ufw 与云端防火墙是两层）
+- MySQL 备份使用 `--hex-blob` 导出，避免字符集转换损坏图片二进制
+
+### 代码更新
+
+```bash
+sudo bash deploy/update.sh
+```
+
+拉取最新代码 → 同步依赖 → 重启服务 → 健康检查一条龙。脚本检测到 root 运行时会先把 `.git` 属主归还 ubuntu，并以 `sudo -H -u ubuntu` 降权执行 git pull / pip install，避免产生 root 属主文件导致后续 `git pull` 报 `insufficient permission`（root 只负责 systemctl 重启）。
 
 ## 加分项脚本使用
 
@@ -295,7 +319,7 @@ AI 验证需在页面中填写服务商、Base URL、API Key、模型名（可�
 | 练习计时 | `elapsed_sec` 累加已用时间段，暂停写 `pause_time`；恢复时用 `TIMESTAMPDIFF(COALESCE(pause_time,start_time), NOW())` 补当前段，刷新不丢时 |
 | 判分规则 | 判断题 √/×、单选精确匹配、多选须完全一致；未答题 `is_correct=NULL` 计错但不记用户答案 |
 | 错题本 | 练习/考试答错自动 upsert（`wrong_count+1`）；标记掌握置 `mastered=1` 移出活跃列表 |
-| PK 对战 | 10 道判断题、每题 15 秒；先答对者得分并锁定该题（对手再答不得分），答错不扣分但通知对手；答完 10 题比总分，平分判平局（双方胜/负场均不变） |
+| PK 对战 | 题型由发起方配置：判断题/单选题各若干、合计 10 题（大厅表单实时校验），抽题后交错出场、每题 15 秒；答对 +1 分并锁定该题（对手再答无效），抢答答错直接送对方 1 分并立即进入下一题；答完 10 题比总分，平分判平局（双方胜/负场均不变） |
 | 排名口径 | 考试榜 `AVG(score)` 降序、练习榜 `SUM(is_correct)` 降序 |
 | 段位规则 | 🥉青铜 0-4 胜 ｜ 🥈白银 5-14 胜 ｜ 🥇黄金 15-29 胜 ｜ 💎铂金 30+ 胜；连胜 3 场显示 🔥 |
 
@@ -314,15 +338,16 @@ AI 验证需在页面中填写服务商、Base URL、API Key、模型名（可�
 
 ### 3. socketio 双人 PK 实时对战
 
-- flask-socketio **threading 模式**（`async_mode='threading'`），无需 eventlet/gevent，`socketio.run(..., allow_unsafe_werkzeug=True)` 启动，监听 `0.0.0.0` 支持局域网联机
+- flask-socketio **async 模式自动适配**：不写死 `async_mode`，装了 eventlet/gevent 的 Linux 生产环境走 gevent（配合 gunicorn），本机 Windows 开发自动回落 threading（`socketio.run(..., allow_unsafe_werkzeug=True)`），均监听 `0.0.0.0` 支持联机
 - **房间状态**：内存字典 `PK_ROOMS`（room_key → 双方 uid/sid/得分/题号/ready 状态）；落库仅保存题目 ID 与最终战绩
+- **题型配置**：发起挑战时大厅表单指定判断题/单选题数量（合计 10），服务端分别 `ORDER BY RAND()` 抽题后 `random.shuffle` 交错出场
 - **事件流**：
 
 ```
 connect → pk_join(join_room) → pk_ready（双方 ready 后广播 3-2-1-GO 倒计时）
    → _pk_next_question（每题 15 秒定时器，每秒检查 locked_q 标志）
-   → pk_answer（服务端判分：答对+1 并置 locked_q 锁定该题，
-               答错仅通知本人 + opponent_wrong 通知对手可抢答）
+   → pk_answer（服务端判分：答对 +1 分并置 locked_q 锁定该题；
+               抢答答错送对方 1 分并锁定本题，双方立即进入下一题）
    → pk_emoji（快捷表情气泡）→ 10 题结束 _pk_finish
 ```
 
@@ -360,7 +385,7 @@ connect → pk_join(join_room) → pk_ready（双方 ready 后广播 3-2-1-GO �
 
 - 考试组卷比例：判断题 40 + 单选题 60，共 100 题，与真实科目一规则一致；多选题仅在顺序练习中出现
 - 任务抽题在发布时固定题目列表：考试用途按学生 ID 做随机种子打乱顺序（判断题始终在前）防邻座作弊；讲解用途全班同序便于统一讲评
-- PK 对战房间状态存于服务进程内存（flask-socketio threading 模式），服务重启后进行中的对战会中断，已完成战绩已落库不受影响
+- PK 对战题型由发起方配置（判断/单选合计 10 题），抢答答错直接送对方 1 分并跳下一题；房间状态存于服务进程内存（生产 gevent / 开发 threading），服务重启后进行中的对战会中断，已完成战绩已落库不受影响
 - LLM 验证的图片题默认跳过；如需真验证，配置视觉模型（如 qwen-vl-plus）并勾选"包含图片题"即可
 - API Key 仅保存在数据库 `llm_config` 表中，不会进入代码仓库
 - 本项目为课程实训作品，仅供学习交流
