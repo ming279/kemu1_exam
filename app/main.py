@@ -289,11 +289,12 @@ def exam_page(pid):
         abort(404)
     if paper['status'] == 'finished':
         return redirect(url_for('exam_result', pid=pid))
-    details = q("SELECT question_id, seq_no FROM exam_detail WHERE paper_id=%s "
-                "ORDER BY seq_no", (pid,))
+    details = q("SELECT question_id, seq_no, user_answer FROM exam_detail "
+                "WHERE paper_id=%s ORDER BY seq_no", (pid,))
     questions = load_questions([d['question_id'] for d in details])
     for r, d in zip(questions, details):
         r['seq'] = d['seq_no']
+        r['user_answer'] = d['user_answer']   # 已自动保存的答案，用于回显勾选
     judges = [r for r in questions if r['qtype'] == 'judge']
     singles = [r for r in questions if r['qtype'] != 'judge']
 
@@ -325,6 +326,23 @@ def exam_page(pid):
     return render_template('exam.html', pid=pid, judges=judges, singles=singles,
                            task=task, task_record=task_record,
                            remain_sec=remain_sec, is_practice=is_practice)
+
+
+@app.route('/exam/<int:pid>/save', methods=['POST'])
+@login_required
+def exam_save(pid):
+    """作答自动保存：只写 user_answer，不判分、不计错题，交卷时才统一判分"""
+    paper = q("SELECT id, status FROM exam_paper WHERE id=%s AND user_id=%s",
+              (pid, session['uid']), one=True)
+    if not paper or paper['status'] == 'finished':
+        return jsonify(ok=False), 404
+    details = q("SELECT id, question_id FROM exam_detail WHERE paper_id=%s",
+                (pid,))
+    for d in details:
+        labels = request.form.getlist(f"q_{d['question_id']}")
+        execute("UPDATE exam_detail SET user_answer=%s WHERE id=%s",
+                (''.join(sorted(labels)) if labels else None, d['id']))
+    return jsonify(ok=True)
 
 
 @app.route('/exam/<int:pid>/submit', methods=['POST'])
