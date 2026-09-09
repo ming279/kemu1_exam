@@ -13,6 +13,7 @@
 <div class="card q-card wrong">
   <span class="qtype">{{ QTYPE_NAME[q.qtype] }}</span>
   <span class="tag-bad">累计错误 {{ q.wrong_count }} 次</span>
+  {% if q.correct_streak >= 1 %}<span class="tag-ok">连对进度 {{ q.correct_streak }}/2</span>{% endif %}
   <span class="muted">最近错误：{{ q.last_wrong_at }}</span>
   <b>{{ q.stem }}</b>
   {% for iid in q.images %}

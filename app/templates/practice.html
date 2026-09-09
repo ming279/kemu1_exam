@@ -1,6 +1,6 @@
 {% extends 'base.html' %}
 {% block content %}
-<h2>顺序练习（第 {{ idx + 1 }} / {{ total }} 题）</h2>
+<h2>{{ mode_label }}（第 {{ idx + 1 }} / {{ total }} 题）</h2>
 {% if feedback %}
 <div class="feedback {{ 'ok' if feedback.ok else 'bad' }}">
   {% if feedback.ok %}<span class="tag-ok">回答正确！</span>

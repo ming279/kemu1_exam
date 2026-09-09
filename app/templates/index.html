@@ -13,9 +13,7 @@
   <form method="post" action="{{ url_for('exam_start') }}" class="inline">
     <button class="btn" type="submit">开始模拟考试</button>
   </form>
-  <form method="post" action="{{ url_for('practice_start') }}" class="inline">
-    <button class="btn secondary" type="submit">顺序练习（10 题）</button>
-  </form>
+  <a class="btn secondary" href="{{ url_for('practice_home') }}">练习（随机/专项/错题）</a>
 </div>
 {% if cur_user.role == 'student' and my_tasks %}
 <div class="card">
