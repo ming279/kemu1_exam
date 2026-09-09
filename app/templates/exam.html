@@ -45,6 +45,8 @@
       {% endfor %}
     </div>
 
+    <button class="btn small secondary" type="button" id="btn-review-mark" style="width:100%;margin:6px 0;">🔖 复查标记题（<span id="mark-n">0</span>）</button>
+    <div id="switch-warn" class="switch-warn" style="display:none;">⚠ 考试中切屏 <b id="switch-n">0</b> 次，切屏将被记录</div>
     <button class="btn" form="examForm" type="submit" onclick="return confirm('确认交卷？')">交卷</button>
   </aside>
 
@@ -57,16 +59,17 @@
       {% if task.time_limit_sec %}｜ 时限：{{ task.time_limit_sec // 60 }} 分钟{% endif %}{% endif %}
     </p>
     <form id="examForm" method="post" action="{{ url_for('exam_submit', pid=pid) }}">
+      <input type="hidden" name="switch_count" id="switch-count-input" value="0">
       <h3 class="section-head">第一部分 · 判断题（{{ judges|length }} 题）</h3>
       {% for q in judges %}
-      <div id="q-{{ q.seq }}" data-qseq="{{ q.seq }}">
+      <div id="q-{{ q.seq }}" data-qseq="{{ q.seq }}" class="q-block">
         {{ render_question(q, interactive=True, num=q.seq, user_labels=q.user_answer) }}
       </div>
       {% endfor %}
 
-      <h3 class="section-head">第二部分 · 选择题（{{ singles|length }} 题）</h3>
+      <h3 class="section-head">第二部分 · 选择题（{{ singles|length + 1 }}-{{ total }}）</h3>
       {% for q in singles %}
-      <div id="q-{{ q.seq }}" data-qseq="{{ q.seq }}">
+      <div id="q-{{ q.seq }}" data-qseq="{{ q.seq }}" class="q-block">
         {{ render_question(q, interactive=True, num=q.seq, user_labels=q.user_answer) }}
       </div>
       {% endfor %}
@@ -183,6 +186,85 @@
       .then(function(d) { if (d.ok) pollStatus(); });
   });
   {% endif %}
+
+  // ---- C2 切屏检测：visibilitychange + blur 计数，随卷提交 ----
+  var switchN = 0;
+  var switchInput = document.getElementById('switch-count-input');
+  function bumpSwitch() {
+    switchN++;
+    switchInput.value = switchN;
+    var w = document.getElementById('switch-warn');
+    w.style.display = '';
+    document.getElementById('switch-n').textContent = switchN;
+  }
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'hidden') bumpSwitch();
+  });
+  window.addEventListener('blur', function () {
+    // visibilitychange 已计的不重复计
+    if (document.visibilityState === 'visible') bumpSwitch();
+  });
+
+  // ---- C5 题目标记（会做但存疑）：答题卡橙色 + 一键跳转复查 ----
+  var marks = {};
+  document.querySelectorAll('.q-block').forEach(function (blk) {
+    var seq = blk.dataset.qseq;
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'q-mark-btn';
+    btn.title = '标记此题（会做但存疑）';
+    btn.textContent = '🔖';
+    btn.addEventListener('click', function () {
+      marks[seq] = !marks[seq];
+      btn.classList.toggle('on', marks[seq]);
+      if (cells[seq]) cells[seq].classList.toggle('marked', marks[seq]);
+      var n = Object.keys(marks).filter(function (k) { return marks[k]; }).length;
+      document.getElementById('mark-n').textContent = n;
+    });
+    blk.insertBefore(btn, blk.firstChild);
+  });
+  document.getElementById('btn-review-mark').addEventListener('click', function () {
+    var marked = Object.keys(marks).filter(function (k) { return marks[k]; })
+                                .sort(function (a, b) { return a - b; });
+    if (!marked.length) { alert('还没有标记任何题目'); return; }
+    var first = document.getElementById('q-' + marked[0]);
+    if (first) first.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+
+  // ---- C6 键盘快捷键：A-D / 1-4 选项，←→ 切题 ----
+  var KEYMAP = { '1': 'A', '2': 'B', '3': 'C', '4': 'D',
+                 'a': 'A', 'b': 'B', 'c': 'C', 'd': 'D' };
+  function currentBlock() {
+    var best = null, bestDist = Infinity, mid = innerHeight / 2;
+    document.querySelectorAll('.q-block').forEach(function (blk) {
+      var r = blk.getBoundingClientRect();
+      var d = Math.abs(r.top + r.height / 2 - mid);
+      if (d < bestDist) { bestDist = d; best = blk; }
+    });
+    return best;
+  }
+  function jumpBlock(delta) {
+    var cur = currentBlock();
+    if (!cur) return;
+    var seq = parseInt(cur.dataset.qseq, 10) + delta;
+    var target = document.getElementById('q-' + seq);
+    if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+  document.addEventListener('keydown', function (e) {
+    if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT') return;
+    var k = e.key.toLowerCase();
+    if (KEYMAP[k]) {
+      var blk = currentBlock();
+      if (!blk) return;
+      var letter = KEYMAP[k];
+      var hit = blk.querySelector('input[value="' + letter + '"]');
+      if (hit && !hit.disabled) {
+        hit.checked = true;
+        hit.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+    } else if (e.key === 'ArrowRight') { jumpBlock(1); e.preventDefault(); }
+    else if (e.key === 'ArrowLeft') { jumpBlock(-1); e.preventDefault(); }
+  });
 })();
 </script>
 {% endblock %}

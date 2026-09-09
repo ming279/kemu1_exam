@@ -5,6 +5,7 @@
   <div class="score {{ 'tag-ok' if paper.score >= 90 else 'tag-bad' }}">{{ paper.score }} 分</div>
   <p style="text-align:center" class="muted">
     共 {{ paper.total_count }} 题（判断 {{ judges|length }} + 单选 {{ singles|length }}）｜ 提交时间：{{ paper.submitted_at }}
+    {% if paper.switch_count %}｜ ⚠ 考试中切屏 {{ paper.switch_count }} 次{% endif %}
     {% if paper.score >= 90 %}｜ 恭喜通过！{% else %}｜ 未达 90 分及格线，继续加油！{% endif %}
   </p>
   <a class="btn" href="{{ url_for('wrongbook') }}">查看错题本</a>

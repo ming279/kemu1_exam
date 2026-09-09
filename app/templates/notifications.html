@@ -1,0 +1,17 @@
+{% extends 'base.html' %}
+{% block title %}站内通知{% endblock %}
+{% block content %}
+<h2>🔔 站内通知</h2>
+<div class="card">
+  {% if not notis %}
+  <p class="muted">暂无通知。任务发布、PK 挑战邀请都会出现在这里。</p>
+  {% endif %}
+  {% for n in notis %}
+  <div class="noti-item">
+    <span class="noti-content">{{ n.content }}{% if not n.is_read %} <span class="tag-bad">•</span>{% endif %}</span>
+    <span class="noti-time">{{ n.created_at }}</span>
+    {% if n.url %}<a class="btn small" href="{{ n.url }}">前往 →</a>{% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% endblock %}

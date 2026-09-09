@@ -1,0 +1,100 @@
+{% extends 'base.html' %}
+{% block title %}对局回放{% endblock %}
+{% block content %}
+<h2>🎬 对局回放 · {{ rec.c_name }} VS {{ rec.o_name }}
+  <a class="btn small secondary" href="{{ url_for('pk_lobby') }}" style="float:right;">返回大厅</a>
+</h2>
+<div class="card" style="background:linear-gradient(135deg,#f0f7ff,#fef3c7);">
+  <div style="display:flex;align-items:center;gap:18px;">
+    <b style="color:#e74c3c;">🚗 {{ rec.c_name }}</b>
+    <span style="font-size:28px;font-weight:900;">{{ rec.challenger_score or 0 }} : {{ rec.opponent_score or 0 }}</span>
+    <b style="color:#3b82f6;">{{ rec.o_name }} 🏎️</b>
+    <span class="muted">房间码 {{ code }} · {{ rec.finished_at }}</span>
+    <span style="flex:1"></span>
+    <span class="tag-ok">{% if rec.winner_uid == rec.challenger_uid %}🏆 {{ rec.c_name }} 胜
+    {% elif rec.winner_uid == rec.opponent_uid %}🏆 {{ rec.o_name }} 胜
+    {% else %}🤝 平局{% endif %}</span>
+  </div>
+</div>
+
+<div class="card">
+  <div style="display:flex;justify-content:space-between;align-items:center;">
+    <h3 style="margin:0;">第 <span id="rv-idx">1</span> / {{ steps|length }} 题</h3>
+    <div style="display:flex;gap:8px;">
+      <button class="btn small secondary" id="rv-prev">← 上一题</button>
+      <button class="btn small" id="rv-next">下一题 →</button>
+      <button class="btn small btn-ai" id="rv-play">▶ 自动播放</button>
+    </div>
+  </div>
+  <progress id="rv-progress" value="1" max="{{ steps|length }}" style="width:100%;height:8px;margin:8px 0;"></progress>
+  <div class="replay-stage">
+    <div style="font-size:17px;font-weight:600;margin:8px 0;" id="rv-stem"></div>
+    <div id="rv-options"></div>
+    <div class="replay-answers">
+      <span class="replay-chip c" id="rv-ca"></span>
+      <span class="replay-chip o" id="rv-oa"></span>
+      <span class="replay-chip none" id="rv-correct"></span>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+var STEPS = {{ steps|tojson }};
+var NAME_C = {{ rec.c_name|tojson }};
+var NAME_O = {{ rec.o_name|tojson }};
+var cur = 0, playTimer = null;
+
+function render(i) {
+  cur = Math.max(0, Math.min(STEPS.length - 1, i));
+  var s = STEPS[cur];
+  document.getElementById('rv-idx').textContent = cur + 1;
+  document.getElementById('rv-progress').value = cur + 1;
+  document.getElementById('rv-stem').textContent = 'Q' + (cur + 1) + ' · ' + s.stem;
+
+  var box = document.getElementById('rv-options');
+  box.innerHTML = '';
+  s.options.forEach(function (o) {
+    var div = document.createElement('div');
+    div.className = 'opt';
+    var isAns = s.correct.indexOf(o.label) >= 0;
+    var cHit = s.c_answer === o.label, oHit = s.o_answer === o.label;
+    div.innerHTML = o.label + '、' + o.content +
+      (isAns ? ' <span class="tag-ok">✔ 正确答案</span>' : '') +
+      (cHit ? ' <span style="color:#e74c3c;font-weight:700;">◀ ' + NAME_C + '</span>' : '') +
+      (oHit ? ' <span style="color:#3b82f6;font-weight:700;">◀ ' + NAME_O + '</span>' : '');
+    box.appendChild(div);
+  });
+  setChip('rv-ca', NAME_C, s.c_answer, s.c_ok);
+  setChip('rv-oa', NAME_O, s.o_answer, s.o_ok);
+  var corr = document.getElementById('rv-correct');
+  corr.textContent = '正确答案 ' + s.correct;
+}
+function setChip(id, name, ans, ok) {
+  var el = document.getElementById(id);
+  if (ans) {
+    el.className = 'replay-chip ' + (id === 'rv-ca' ? 'c' : 'o');
+    el.textContent = name + ' 答 ' + ans + (ok ? ' ✓' : ' ✗');
+  } else {
+    el.className = 'replay-chip none';
+    el.textContent = name + ' 未作答';
+  }
+}
+document.getElementById('rv-prev').onclick = function () { stopPlay(); render(cur - 1); };
+document.getElementById('rv-next').onclick = function () { stopPlay(); render(cur + 1); };
+function stopPlay() {
+  if (playTimer) { clearInterval(playTimer); playTimer = null;
+    document.getElementById('rv-play').textContent = '▶ 自动播放'; }
+}
+document.getElementById('rv-play').onclick = function () {
+  if (playTimer) { stopPlay(); return; }
+  this.textContent = '⏸ 暂停';
+  playTimer = setInterval(function () {
+    if (cur >= STEPS.length - 1) { stopPlay(); return; }
+    render(cur + 1);
+  }, 1600);
+};
+render(0);
+</script>
+{% endblock %}

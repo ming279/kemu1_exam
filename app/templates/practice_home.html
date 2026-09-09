@@ -2,6 +2,15 @@
 {% block content %}
 <h2>练习中心</h2>
 
+<!-- C7 背题模式：勾选后三种练习均立即显示答案与解析（不记作答） -->
+<div class="card" style="background:linear-gradient(135deg,#eef2ff,#fdf4ff);">
+  <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+    <input type="checkbox" id="reveal-toggle">
+    <b>📖 背题模式</b>
+    <span class="muted">勾选后立即显示答案+解析（适合快速记忆，不计入练习记录与错题本）</span>
+  </label>
+</div>
+
 <div class="grid" style="grid-template-columns:repeat(3,1fr);">
   <!-- 随机练习 -->
   <div class="card">
@@ -9,6 +18,7 @@
     <p class="muted">从全部题库随机抽题，适合日常刷题保持手感。</p>
     <form method="post" action="{{ url_for('practice_start') }}">
       <input type="hidden" name="mode" value="random">
+      <input type="hidden" name="reveal" class="f-reveal" value="">
       <label>每轮题数</label>
       <input type="number" name="num" value="10" min="1" max="500" style="width:100px">
       <button class="btn" type="submit" style="margin-top:10px;">开始随机练习</button>
@@ -21,6 +31,7 @@
     <p class="muted">按知识分类和题型集中突破薄弱环节。</p>
     <form method="post" action="{{ url_for('practice_start') }}">
       <input type="hidden" name="mode" value="category">
+      <input type="hidden" name="reveal" class="f-reveal" value="">
       <label>知识分类</label>
       <select name="category_id" style="width:100%;">
         <option value="all">全部分类</option>
@@ -49,6 +60,7 @@
     <p>当前未掌握错题：<b class="tag-bad">{{ wrong_n }}</b> 道</p>
     <form method="post" action="{{ url_for('practice_start') }}">
       <input type="hidden" name="mode" value="wrong">
+      <input type="hidden" name="reveal" class="f-reveal" value="">
       <label>每轮题数</label>
       <input type="number" name="num" value="10" min="1" max="500" style="width:100px"
              {% if not wrong_n %}disabled{% endif %}>
@@ -61,4 +73,20 @@
 <p class="muted" style="margin-top:12px;">
   练习答错的题自动进入错题本；可在 <a href="{{ url_for('wrongbook') }}">错题本</a> 查看全部错题与答案解析。
 </p>
+{% endblock %}
+
+{% block scripts %}
+<script>
+/* C7 背题模式开关同步到三个表单的 reveal 隐藏域 */
+(function () {
+  var t = document.getElementById('reveal-toggle');
+  function sync() {
+    document.querySelectorAll('.f-reveal').forEach(function (i) {
+      i.value = t.checked ? '1' : '';
+    });
+  }
+  t.addEventListener('change', sync);
+  sync();
+})();
+</script>
 {% endblock %}

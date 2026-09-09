@@ -11,9 +11,11 @@ main.py - 驾照科目一题库管理与模拟考试系统（B/S 架构，Flask�
   image     图片服务（从数据库 BLOB 输出）
 """
 import os
+import re
 import random
 import hashlib
 import secrets
+from datetime import date, timedelta
 from functools import wraps
 
 # 云服务器生产部署用 gunicorn + gevent 提供 WebSocket；
@@ -121,9 +123,35 @@ def current_user():
              (session['uid'],), one=True)
 
 
+def _study_streak(uid):
+    """连续学习天数（练习+考试按天并集，从今天/昨天往前数，C13 每日打卡）"""
+    days = set()
+    for r in q("SELECT DISTINCT DATE(practiced_at) d FROM practice WHERE user_id=%s "
+               "AND practiced_at >= DATE_SUB(CURDATE(), INTERVAL 60 DAY)", (uid,)):
+        days.add(r['d'])
+    for r in q("SELECT DISTINCT DATE(submitted_at) d FROM exam_paper WHERE user_id=%s "
+               "AND status='finished' AND submitted_at >= DATE_SUB(CURDATE(), INTERVAL 60 DAY)",
+               (uid,)):
+        days.add(r['d'])
+    streak, d = 0, date.today()
+    if d not in days:                       # 今天还没学，从昨天起算不断签
+        d -= timedelta(days=1)
+    while d in days:
+        streak += 1
+        d -= timedelta(days=1)
+    return streak
+
+
 @app.context_processor
 def inject_user():
-    return dict(cur_user=current_user(), QTYPE_NAME=QTYPE_NAME)
+    u = current_user()
+    extra = {}
+    if u:
+        extra['study_streak'] = _study_streak(u['id'])
+        extra['notif_unread'] = q(
+            "SELECT COUNT(*) c FROM notification WHERE uid=%s AND is_read=0",
+            (u['id'],), one=True)['c']
+    return dict(cur_user=u, QTYPE_NAME=QTYPE_NAME, **extra)
 
 
 def sha256(s):
@@ -387,9 +415,11 @@ def exam_submit(pid):
 
     total = paper['total_count']
     final_score = round(score * 100.0 / total, 2)
+    # C2 切屏检测：前端统计 visibilitychange+blur 次数随卷提交
+    switch_n = request.form.get('switch_count', 0, type=int) or 0
     execute("UPDATE exam_paper SET score=%s, status='finished', "
-            "submitted_at=CURRENT_TIMESTAMP WHERE id=%s",
-            (final_score, pid))
+            "submitted_at=CURRENT_TIMESTAMP, switch_count=%s WHERE id=%s",
+            (final_score, switch_n, pid))
     # 若是任务考试，更新 task_record 状态为 completed
     if paper.get('task_id'):
         execute("UPDATE task_record SET status='completed', "
@@ -405,6 +435,9 @@ def exam_result(pid):
               (pid, session['uid']), one=True)
     if not paper:
         abort(404)
+    if paper['status'] != 'finished':
+        # 未交卷的试卷没有成绩，回到答题页
+        return redirect(url_for('exam_page', pid=pid))
     details = q("SELECT d.question_id, d.user_answer, d.is_correct, d.seq_no "
                 "FROM exam_detail d WHERE d.paper_id=%s ORDER BY d.seq_no", (pid,))
     questions = load_questions([d['question_id'] for d in details])
@@ -447,6 +480,8 @@ def practice_start():
     mode = request.form.get('mode', 'random')
     if mode not in PRACTICE_MODES:
         mode = 'random'
+    # C7 背题模式：立即显示答案+解析（不记作答记录）
+    session['p_reveal'] = request.form.get('reveal') == '1'
     try:
         n = max(1, min(500, int(request.form.get('num', 10))))
     except (TypeError, ValueError):
@@ -514,6 +549,7 @@ def practice_page(idx):
     fb = session.pop('p_feedback', None)      # 上一题的判分反馈
     return render_template('practice.html', idx=idx, total=len(p_ids),
                            question=question, feedback=fb,
+                           reveal=session.get('p_reveal', False),
                            mode_label=session.get('p_mode_label', '练习'))
 
 
@@ -560,11 +596,47 @@ def practice_summary():
     p_ids = session.pop('p_ids', None) or []
     mode_label = session.pop('p_mode_label', '练习')
     session.pop('p_mode', None)
+    session.pop('p_reveal', None)
     return render_template('practice_summary.html', total=len(p_ids),
                            mode_label=mode_label)
 
 
 # ---------------- wrongbook 模块 ----------------
+_STEM_PUNCT = re.compile(r'[\s，。、,.：:；;？！?!（）()\-—~～]')
+
+
+def _stem_grams(s):
+    """题干 2-gram 集合（去标点空白），用于相似题 Jaccard 相似度"""
+    s = _STEM_PUNCT.sub('', s or '')
+    if len(s) < 2:
+        return {s} if s else set()
+    return {s[i:i + 2] for i in range(len(s) - 1)}
+
+
+def _similar_questions(qid, n=3):
+    """C19 相似题推荐：同题型优先同分类，2-gram Jaccard 取 top n"""
+    base = q("SELECT id, stem, qtype, category_id FROM question WHERE id=%s",
+             (qid,), one=True)
+    if not base:
+        return []
+    cands = q("SELECT id, stem FROM question WHERE id<>%s AND qtype=%s "
+              "ORDER BY (category_id=%s) DESC, RAND() LIMIT 400",
+              (qid, base['qtype'], base['category_id']))
+    grams = _stem_grams(base['stem'])
+    scored = []
+    for c in cands:
+        g2 = _stem_grams(c['stem'])
+        union = grams | g2
+        if not union:
+            continue
+        score = len(grams & g2) / len(union)
+        if score >= 0.12:
+            scored.append((score, c))
+    scored.sort(key=lambda x: -x[0])
+    return [{'id': c['id'], 'stem': c['stem'], 'qtype': base['qtype'], 'sim': round(sc, 2)}
+            for sc, c in scored[:n]]
+
+
 @app.route('/wrongbook')
 @login_required
 def wrongbook():
@@ -579,7 +651,9 @@ def wrongbook():
         it['wrong_count'] = r['wrong_count']
         it['correct_streak'] = r['correct_streak']
         it['last_wrong_at'] = r['last_wrong_at']
-    return render_template('wrongbook.html', questions=items)
+    # C19 相似题推荐（前 20 题计算，避免长列表过慢）
+    sim_map = {it['id']: _similar_questions(it['id']) for it in items[:20]}
+    return render_template('wrongbook.html', questions=items, sim_map=sim_map)
 
 
 @app.route('/wrongbook/master/<int:qid>', methods=['POST'])
@@ -604,7 +678,126 @@ def wrongbook_clear():
     return redirect(url_for('wrongbook'))
 
 
+# ---------------- C18 AI 错题讲解 / C20 纠错上报 ----------------
+PROMPT_EXPLAIN = (
+    '你是机动车驾驶人科目一考试的资深教练。请用通俗易懂的语言讲解下面这道题：'
+    '先点明正确答案，再解释其中的法规原理和易错点，最后给一句好记的口诀。'
+    '全文不超过150字。\n题目：{stem}\n选项：\n{options}\n正确答案：{answer}'
+)
+
+
+@app.route('/ai/explain/<int:qid>', methods=['POST'])
+@login_required
+def ai_explain(qid):
+    """AI 通俗讲解：优先返回已缓存的解析，否则调 LLM 生成并缓存入 explanation"""
+    row = q("SELECT explanation FROM question WHERE id=%s", (qid,), one=True)
+    if not row:
+        return jsonify(ok=False, msg='题目不存在'), 404
+    if row['explanation']:
+        return jsonify(ok=True, explanation=row['explanation'], cached=True)
+    cfg = llm_mod.get_config()
+    if not cfg:
+        return jsonify(ok=False, msg='管理员尚未配置 AI 接口，无法生成讲解')
+    qq = load_questions([qid])[0]
+    opt_lines = '\n'.join(f"{o['label']}. {o['content']}" for o in qq['options'])
+    answer = ''.join(o['label'] for o in qq['options'] if o['is_correct'])
+    try:
+        content, pt, ct, ms = llm_mod._chat(
+            cfg, PROMPT_EXPLAIN.format(stem=qq['stem'], options=opt_lines,
+                                       answer=answer), 300)
+    except Exception as e:
+        return jsonify(ok=False, msg='AI 调用失败：' + str(e)[:200])
+    text = (content or '').strip()
+    if not text:
+        return jsonify(ok=False, msg='AI 未返回内容，请稍后重试')
+    execute("UPDATE question SET explanation=%s WHERE id=%s", (text, qid))
+    return jsonify(ok=True, explanation=text)
+
+
+@app.route('/report/question/<int:qid>', methods=['POST'])
+@login_required
+def report_question(qid):
+    """C20 学生纠错上报（练习/错题本页调用，fetch JSON）"""
+    if not q("SELECT id FROM question WHERE id=%s", (qid,), one=True):
+        return jsonify(ok=False, msg='题目不存在'), 404
+    if request.is_json:
+        data = request.get_json(silent=True) or {}
+        reason = data.get('reason', '')
+    else:
+        reason = request.form.get('reason', '')
+    reason = (reason or '').strip() or '未填写具体原因'
+    execute("INSERT INTO question_report (question_id, uid, reason) "
+            "VALUES (%s, %s, %s)", (qid, session['uid'], reason[:500]))
+    return jsonify(ok=True, msg='已收到反馈，感谢纠错！管理员会尽快核实')
+
+
+# ---------------- C22 站内通知中心 ----------------
+def _notify(uid, content, url=None):
+    """写一条站内通知"""
+    execute("INSERT INTO notification (uid, content, url) VALUES (%s, %s, %s)",
+            (uid, content[:200], url))
+
+
+@app.route('/notifications')
+@login_required
+def notifications_page():
+    """通知列表（进入即全部标记已读）"""
+    rows = q("SELECT * FROM notification WHERE uid=%s ORDER BY id DESC LIMIT 50",
+             (session['uid'],))
+    execute("UPDATE notification SET is_read=1 WHERE uid=%s AND is_read=0",
+            (session['uid'],))
+    return render_template('notifications.html', notis=rows)
+
+
 # ---------------- stats 模块 ----------------
+def _pass_probability(scores):
+    """C10 过考概率：最近 5 场均分 -> 概率映射"""
+    if not scores:
+        return None
+    avg5 = round(sum(scores[:5]) / min(5, len(scores)), 1)
+    if avg5 >= 95:
+        p, text = 98, '稳了，放心上考场！'
+    elif avg5 >= 90:
+        p, text = 85, '已过及格线，保持手感更稳'
+    elif avg5 >= 85:
+        p, text = 60, '就差一点点，再刷两轮错题'
+    elif avg5 >= 80:
+        p, text = 40, '继续加油，重点攻克易错题'
+    elif avg5 >= 70:
+        p, text = 20, '还有差距，建议多做模拟卷'
+    else:
+        p, text = 10, '先从背题模式开始打基础吧'
+    return {'p': p, 'avg5': avg5, 'text': text}
+
+
+def _achievements(uid, streak):
+    """C12 成就徽章：全部由现有数据动态计算，无新表"""
+    full = q("SELECT COUNT(*) c FROM exam_paper WHERE user_id=%s AND score=100",
+             (uid,), one=True)['c']
+    prac_ok = q("SELECT COALESCE(SUM(is_correct),0) c FROM practice "
+                "WHERE user_id=%s", (uid,), one=True)['c']
+    exam_ok = q("SELECT COALESCE(SUM(ed.is_correct),0) c FROM exam_detail ed "
+                "JOIN exam_paper ep ON ep.id=ed.paper_id WHERE ep.user_id=%s",
+                (uid,), one=True)['c']
+    mastered = q("SELECT COUNT(*) c FROM wrong_book WHERE user_id=%s AND mastered=1",
+                 (uid,), one=True)['c']
+    wins = q("SELECT pk_wins c FROM `user` WHERE id=%s", (uid,), one=True)['c'] or 0
+    covered = q("SELECT COUNT(DISTINCT question_id) c FROM practice "
+                "WHERE user_id=%s", (uid,), one=True)['c']
+    passed = q("SELECT COUNT(*) c FROM exam_paper WHERE user_id=%s AND score>=90",
+               (uid,), one=True)['c']
+    return [
+        ('💯', '首次满分', '模拟考试拿到 100 分', full >= 1),
+        ('🎯', '百发百中', '累计答对 200 题', (prac_ok + exam_ok) >= 200),
+        ('📚', '错题克星', '掌握错题 50 道', mastered >= 50),
+        ('⚔️', '初次凯旋', '赢下第一场 PK 对战', wins >= 1),
+        ('👑', '十战十胜', 'PK 累计获胜 10 场', wins >= 10),
+        ('🔥', '七日之约', '连续学习 7 天', streak >= 7),
+        ('🗺️', '题海遨游', '练习覆盖 500 道不同题目', covered >= 500),
+        ('✅', '及格到手', '考试达到 90 分及格线', passed >= 1),
+    ]
+
+
 @app.route('/stats')
 @login_required
 def stats():
@@ -629,8 +822,40 @@ def stats():
         "JOIN question q ON q.id = wb.question_id "
         "WHERE wb.user_id=%s ORDER BY wb.wrong_count DESC LIMIT 10",
         (session['uid'],))
+
+    # C10 过考概率（最近 5 场均分）
+    prob = _pass_probability([float(p['score']) for p in done])
+    # C9 能力雷达：练习正确率按一级分类聚合
+    radar_rows = q(
+        "SELECT COALESCE(c2.name, c1.name, '未分类') AS root_name, "
+        "COUNT(*) AS attempts, SUM(pr.is_correct) AS corrects "
+        "FROM practice pr JOIN question q ON q.id=pr.question_id "
+        "LEFT JOIN category c1 ON c1.id=q.category_id "
+        "LEFT JOIN category c2 ON c2.id=c1.parent_id "
+        "WHERE pr.user_id=%s GROUP BY root_name ORDER BY attempts DESC",
+        (session['uid'],))
+    radar_names = [r['root_name'] for r in radar_rows]
+    radar_values = [round(float(r['corrects'] or 0) * 100.0 / r['attempts'], 1)
+                    for r in radar_rows]
+    # C11 学习热力图（近 12 周每天练习作答量）
+    heat_raw = q("SELECT DATE(practiced_at) d, COUNT(*) c FROM practice "
+                 "WHERE user_id=%s AND practiced_at >= "
+                 "DATE_SUB(CURDATE(), INTERVAL 83 DAY) GROUP BY DATE(practiced_at)",
+                 (session['uid'],))
+    hmap = {str(r['d']): int(r['c']) for r in heat_raw}
+    today = date.today()
+    heat_list = [
+        [(today - timedelta(days=83 - i)).isoformat(),
+         hmap.get((today - timedelta(days=83 - i)).isoformat(), 0)]
+        for i in range(84)]
+    # C12 成就徽章（C13 连续天数由上下文处理器注入）
+    achievements = _achievements(session['uid'], _study_streak(session['uid']))
+    ach_unlocked = sum(1 for a in achievements if a[3])
     return render_template('stats.html', me=me, papers=my_papers,
-                           psum=paper_summary, weak=my_weak)
+                           psum=paper_summary, weak=my_weak, prob=prob,
+                           radar_names=radar_names, radar_values=radar_values,
+                           heat_list=heat_list, ach_unlocked=ach_unlocked,
+                           achievements=achievements)
 
 
 def _paper_sources(papers):
@@ -770,19 +995,61 @@ def admin_questions():
     page = max(1, request.args.get('page', 1, type=int))
     per_page = 20
     search = request.args.get('q', '').strip()
-    where = "WHERE 1=1"
-    params = []
+    qtype_f = request.args.get('qtype', '').strip()
+    cat_f = request.args.get('cat', '').strip()
+    where, params = "WHERE 1=1", []
     if search:
-        where += " AND stem LIKE %s"
-        params.append(f'%{search}%')
+        # C21 支持题干关键词与题号两种搜索方式
+        if search.isdigit():
+            where += " AND (stem LIKE %s OR id=%s)"
+            params.extend([f'%{search}%', int(search)])
+        else:
+            where += " AND stem LIKE %s"
+            params.append(f'%{search}%')
+    if qtype_f in ('judge', 'single', 'multi'):
+        where += " AND qtype=%s"
+        params.append(qtype_f)
+    if cat_f == '0':
+        where += " AND category_id IS NULL"
+    elif cat_f.isdigit():
+        where += " AND category_id=%s"
+        params.append(int(cat_f))
     total = q(f"SELECT COUNT(*) c FROM question {where}", params, one=True)['c']
     pages = max(1, (total + per_page - 1) // per_page)
     offset = (page - 1) * per_page
     rows = q(f"SELECT id, LEFT(stem, 50) stem_short, qtype, explanation "
              f"FROM question {where} ORDER BY id LIMIT %s OFFSET %s",
              params + [per_page, offset])
+    # 筛选下拉选项
+    cats = q("SELECT id, name, parent_id FROM category ORDER BY parent_id, id")
+    name_map = {c['id']: c['name'] for c in cats}
+    cat_options = [{
+        'id': c['id'],
+        'label': (name_map[c['parent_id']] + ' / ' if c['parent_id'] else '')
+                 + c['name'],
+    } for c in cats]
+    # C20 待审核纠错上报
+    reports = q(
+        "SELECT r.id, r.reason, r.created_at, u.username, u.real_name, "
+        "q.id AS qid, LEFT(q.stem, 40) stem_short FROM question_report r "
+        "JOIN `user` u ON u.id=r.uid JOIN question q ON q.id=r.question_id "
+        "WHERE r.status='pending' ORDER BY r.id DESC LIMIT 50")
     return render_template('admin_questions.html', rows=rows, page=page,
-                           pages=pages, search=search, total=total)
+                           pages=pages, search=search, total=total,
+                           qtype_f=qtype_f, cat_f=cat_f, cat_options=cat_options,
+                           reports=reports)
+
+
+@app.route('/admin/questions/report/<int:rid>/resolve', methods=['POST'])
+@login_required
+def admin_report_resolve(rid):
+    """C20 标记纠错上报为已处理"""
+    me, err = _admin_or_back()
+    if err:
+        return err
+    execute("UPDATE question_report SET status='resolved' WHERE id=%s", (rid,))
+    flash(f'纠错上报 #{rid} 已标记处理完成', 'success')
+    return redirect(url_for('admin_questions'))
 
 
 @app.route('/admin/questions/<int:qid>/explanation', methods=['POST'])
@@ -1071,12 +1338,30 @@ def admin_tasks_create():
         flash('组卷失败，请检查题库', 'danger')
         return redirect(url_for('admin_tasks'))
 
+    # C22/定向：读取接收名单（None=全员，逗号串=指定学生）
+    target_uids, terr = _form_target_uids()
+    if terr:
+        flash(terr, 'danger')
+        return redirect(url_for('admin_tasks'))
+
     execute(
         "INSERT INTO task (title, creator_uid, judge_count, single_count, "
-        "time_limit_sec, mode, purpose, question_ids, shuffle_order, status) "
-        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'published')",
+        "time_limit_sec, mode, purpose, question_ids, shuffle_order, "
+        "target_uids, status) "
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'published')",
         (title, session['uid'], judge_count, single_count, time_limit_sec,
-         mode, purpose, ','.join(map(str, qids)), int(shuffle_order)))
+         mode, purpose, ','.join(map(str, qids)), int(shuffle_order),
+         target_uids))
+    # C22 站内通知：推送给接收名单内的学生（NULL=全体学生）
+    if target_uids:
+        dest = [u for u in target_uids.split(',') if u]
+    else:
+        dest = None
+    for s in q("SELECT id FROM `user` WHERE role='student'"):
+        if dest is not None and str(s['id']) not in dest:
+            continue
+        _notify(s['id'], f'新任务「{title}」已发布，共 {judge_count + single_count} 题',
+                url_for('my_tasks_page'))
     flash(f'任务「{title}」已发布（判断 {judge_count} + 单选 {single_count} = '
           f'{judge_count + single_count} 题）', 'success')
     return redirect(url_for('admin_tasks'))
@@ -1511,7 +1796,8 @@ def _build_export_data(scenario, task_id, student_id, fmt):
         if task_id:
             rows_data = q(
                 "SELECT u.id, u.username, u.real_name, ep.score, ep.total_count, "
-                "tr.elapsed_sec, CASE WHEN ep.score>=90 THEN '通过' ELSE '未通过' END AS pass, "
+                "tr.elapsed_sec, ep.switch_count, "
+                "CASE WHEN ep.score>=90 THEN '通过' ELSE '未通过' END AS pass, "
                 "ep.submitted_at "
                 "FROM exam_paper ep JOIN `user` u ON u.id=ep.user_id "
                 "JOIN task_record tr ON tr.paper_id=ep.id "
@@ -1520,14 +1806,17 @@ def _build_export_data(scenario, task_id, student_id, fmt):
         else:
             rows_data = q(
                 "SELECT u.id, u.username, u.real_name, ep.score, ep.total_count, "
-                "tr.elapsed_sec, CASE WHEN ep.score>=90 THEN '通过' ELSE '未通过' END AS pass, "
+                "tr.elapsed_sec, ep.switch_count, "
+                "CASE WHEN ep.score>=90 THEN '通过' ELSE '未通过' END AS pass, "
                 "ep.submitted_at "
                 "FROM exam_paper ep JOIN `user` u ON u.id=ep.user_id "
                 "LEFT JOIN task_record tr ON tr.paper_id=ep.id "
                 "WHERE ep.status='finished' ORDER BY ep.score DESC")
-        headers = ['排名', '学号', '账号', '姓名', '分数', '题数', '通过状态', '用时(秒)', '提交时间']
+        headers = ['排名', '学号', '账号', '姓名', '分数', '题数', '通过状态',
+                   '用时(秒)', '切屏次数', '提交时间']
         rows = [(i+1, r['id'], r['username'], r['real_name'] or '', r['score'],
                  r['total_count'], r['pass'], r['elapsed_sec'] or '',
+                 r['switch_count'] or 0,
                  str(r['submitted_at']) if r['submitted_at'] else '')
                 for i, r in enumerate(rows_data)]
         return headers, rows, '成绩公告'
@@ -1861,10 +2150,15 @@ def pk_challenge():
     qids = judge_ids + single_ids
     random.shuffle(qids)  # 判断/单选交错出场
 
+    # C16 赛道皮肤（发起方选择）
+    theme = request.form.get('theme', 'day')
+    if theme not in ('day', 'night', 'rain', 'desert'):
+        theme = 'day'
+
     pid = execute(
-        "INSERT INTO pk_challenge (challenger_uid, opponent_uid, question_ids, status) "
-        "VALUES (%s, %s, %s, 'waiting')",
-        (session['uid'], opponent_id, ','.join(map(str, qids))))
+        "INSERT INTO pk_challenge (challenger_uid, opponent_uid, question_ids, "
+        "theme, status) VALUES (%s, %s, %s, %s, 'waiting')",
+        (session['uid'], opponent_id, ','.join(map(str, qids)), theme))
 
     # 初始化内存房间
     key = _pk_room_key(pid)
@@ -1877,16 +2171,39 @@ def pk_challenge():
         'scores': {session['uid']: 0, opponent_id: 0},
         'answers': {},   # q_idx -> {uid: answer_label}
         'answered': {},  # q_idx -> set of uid who got it right (locked)
+        'seq': {},       # C15 回放：q_idx -> {uid: answer_label}（含答错与未答）
         'ready': set(),
         'sids': {},
+        'watchers': set(),   # C14 观战者 sid 集合
+        'theme': theme,
     }
-    # 对手在线则实时推送邀请（大厅轮询作兜底）
+    # C22 站内通知：告知被挑战方
     me_row = q("SELECT username FROM `user` WHERE id=%s", (session['uid'],), one=True)
+    _notify(opponent_id, f'{me_row["username"]} 向你发起 PK 挑战，快去应战！',
+            url_for('pk_lobby'))
+    # 对手在线则实时推送邀请（大厅轮询作兜底）
     for sid, uid in list(ONLINE_SIDS.items()):
         if uid == opponent_id:
             socketio.emit('pk_invited',
                           {'pid': pid, 'from': me_row['username']}, to=sid)
     return redirect(url_for('pk_room', pid=pid))
+
+
+@app.route('/pk/join_code', methods=['POST'])
+@login_required
+def pk_join_code():
+    """C17 房间码快速加入：code = 100000 + challenge_id；
+    非本局玩家输入房间码自动转为观战"""
+    code = request.form.get('code', '').strip()
+    pid = int(code) - 100000 if code.isdigit() and len(code) == 6 else None
+    rec = q("SELECT * FROM pk_challenge WHERE id=%s", (pid,), one=True) \
+        if pid and pid > 0 else None
+    if not rec or rec['status'] not in ('waiting', 'ready', 'playing'):
+        flash('房间码无效或该对局已结束', 'danger')
+        return redirect(url_for('pk_lobby'))
+    if session['uid'] in (rec['challenger_uid'], rec['opponent_uid']):
+        return redirect(url_for('pk_room', pid=pid))
+    return redirect(url_for('pk_watch', pid=pid))
 
 
 @app.route('/pk/invitations')
@@ -1924,8 +2241,18 @@ def pk_decline(pid):
 @app.route('/pk/<int:pid>')
 @login_required
 def pk_room(pid):
-    """PK 房间页"""
-    rec = q(
+    """PK 房间页（玩家）"""
+    rec = _pk_rec(pid)
+    if not rec:
+        abort(404)
+    if session['uid'] not in (rec['challenger_uid'], rec['opponent_uid']):
+        flash('你不是本局玩家，可从大厅观战', 'danger')
+        return redirect(url_for('pk_lobby'))
+    return _render_pk_room(rec, is_watcher=False)
+
+
+def _pk_rec(pid):
+    return q(
         "SELECT p.*, uc.username AS c_name, uc.real_name AS c_real, "
         "uo.username AS o_name, uo.real_name AS o_real, "
         "uc.pk_wins AS c_wins, uo.pk_wins AS o_wins, "
@@ -1934,12 +2261,11 @@ def pk_room(pid):
         "JOIN `user` uc ON uc.id=p.challenger_uid "
         "JOIN `user` uo ON uo.id=p.opponent_uid "
         "WHERE p.id=%s", (pid,), one=True)
-    if not rec:
-        abort(404)
-    if session['uid'] not in (rec['challenger_uid'], rec['opponent_uid']):
-        flash('你不是本局玩家', 'danger')
-        return redirect(url_for('pk_lobby'))
 
+
+def _render_pk_room(rec, is_watcher):
+    """渲染 PK 房间页（玩家与观战者共用模板）"""
+    pid = rec['id']
     # 加载题目内容（发给前端）
     qids = [int(x) for x in rec['question_ids'].split(',')]
     questions = load_questions(qids)
@@ -1955,19 +2281,78 @@ def pk_room(pid):
                         for o in qq['options']],
         })
 
-    my_role = 'challenger' if session['uid'] == rec['challenger_uid'] else 'opponent'
-    my_name = rec['c_name'] if my_role == 'challenger' else rec['o_name']
-    opp_name = rec['o_name'] if my_role == 'challenger' else rec['c_name']
-    my_wins = rec['c_wins'] if my_role == 'challenger' else rec['o_wins']
-    opp_wins = rec['o_wins'] if my_role == 'challenger' else rec['c_wins']
-    my_streak = rec['c_streak'] if my_role == 'challenger' else rec['o_streak']
-    opp_streak = rec['o_streak'] if my_role == 'challenger' else rec['c_streak']
+    if is_watcher:
+        my_name, opp_name = rec['c_name'], rec['o_name']
+        my_wins, opp_wins = rec['c_wins'], rec['o_wins']
+        my_streak, opp_streak = rec['c_streak'], rec['o_streak']
+    else:
+        my_role = 'challenger' if session['uid'] == rec['challenger_uid'] else 'opponent'
+        my_name = rec['c_name'] if my_role == 'challenger' else rec['o_name']
+        opp_name = rec['o_name'] if my_role == 'challenger' else rec['c_name']
+        my_wins = rec['c_wins'] if my_role == 'challenger' else rec['o_wins']
+        opp_wins = rec['o_wins'] if my_role == 'challenger' else rec['c_wins']
+        my_streak = rec['c_streak'] if my_role == 'challenger' else rec['o_streak']
+        opp_streak = rec['o_streak'] if my_role == 'challenger' else rec['c_streak']
 
     return render_template('pk_room.html', pid=pid, rec=rec, questions=qs,
-                           my_role=my_role, my_name=my_name, opp_name=opp_name,
+                           my_role='watcher' if is_watcher else my_role,
+                           my_name=my_name, opp_name=opp_name,
                            my_wins=my_wins, opp_wins=opp_wins,
                            my_streak=my_streak, opp_streak=opp_streak,
+                           is_watcher=is_watcher,
+                           code=100000 + pid,
+                           theme=rec.get('theme') or 'day',
                            q_time=PK_Q_TIME)
+
+
+@app.route('/pk/<int:pid>/watch')
+@login_required
+def pk_watch(pid):
+    """C14 观战：第三人以只读方式进入房间"""
+    rec = _pk_rec(pid)
+    if not rec:
+        abort(404)
+    if session['uid'] in (rec['challenger_uid'], rec['opponent_uid']):
+        return redirect(url_for('pk_room', pid=pid))
+    return _render_pk_room(rec, is_watcher=True)
+
+
+@app.route('/pk/<int:pid>/replay')
+@login_required
+def pk_replay(pid):
+    """C15 对局回放：按题目顺序逐步重演双方作答"""
+    rec = _pk_rec(pid)
+    if not rec:
+        abort(404)
+    if rec['status'] != 'finished':
+        flash('该对局尚未结束，无法回放', 'warning')
+        return redirect(url_for('pk_lobby'))
+    me = current_user()
+    if session['uid'] not in (rec['challenger_uid'], rec['opponent_uid']) \
+            and (not me or me['role'] != 'admin'):
+        flash('仅对局双方可回放', 'danger')
+        return redirect(url_for('pk_lobby'))
+    qids = [int(x) for x in rec['question_ids'].split(',')]
+    questions = load_questions(qids)
+    qa = rec['challenger_answers'] or ''
+    ob = rec['opponent_answers'] or ''
+    steps = []
+    for i, qq in enumerate(questions):
+        correct = ''.join(o['label'] for o in qq['options'] if o['is_correct'])
+        ca = qa[i] if i < len(qa) and qa[i] != '_' else None
+        oa = ob[i] if i < len(ob) and ob[i] != '_' else None
+        steps.append({
+            'idx': i,
+            'stem': qq['stem'],
+            'images': qq['images'],
+            'options': [{'label': o['label'], 'content': o['content'],
+                         'correct': bool(o['is_correct'])} for o in qq['options']],
+            'correct': correct,
+            'c_answer': ca, 'o_answer': oa,
+            'c_ok': ca == correct, 'o_ok': oa == correct,
+        })
+    return render_template('pk_replay.html', rec=rec, steps=steps,
+                           code=100000 + pid)
 
 
 # ---- WebSocket 事件 ----
@@ -1988,6 +2373,11 @@ def socket_connect():
 @socketio.on('disconnect')
 def socket_disconnect():
     uid = ONLINE_SIDS.pop(request.sid, None)
+    # C14 观战者断开：更新房间旁观人数
+    for key, room in list(PK_ROOMS.items()):
+        if request.sid in room.get('watchers', set()):
+            room['watchers'].discard(request.sid)
+            emit('watch_count', {'n': len(room.get('watchers', set()))}, room=key)
     if uid is None:
         return
     # 通知所在房间的对手（仅当断开的是该用户当前绑定的连接才算真正离开；
@@ -2018,7 +2408,9 @@ def pk_join(data):
             'questions': [int(x) for x in rec['question_ids'].split(',')],
             'current_q': -1,
             'scores': {rec['challenger_uid']: 0, rec['opponent_uid']: 0},
-            'answers': {}, 'answered': {}, 'ready': set(), 'sids': {},
+            'answers': {}, 'answered': {}, 'seq': {},
+            'ready': set(), 'sids': {}, 'watchers': set(),
+            'theme': rec.get('theme') or 'day',
         }
     uid = _session_uid()
     if uid not in (room['challenger'], room['opponent']):
@@ -2032,6 +2424,39 @@ def pk_join(data):
         {'uid': room['opponent'], 'ready': room['opponent'] in room['ready']},
     ]
     emit('room_state', {'players': players, 'status': room['status']}, room=key)
+
+
+@socketio.on('watch_join')
+def watch_join(data):
+    """C14 观战者加入：只读同步题目与比分"""
+    pid = data.get('pid')
+    if _session_uid() is None:
+        return
+    key = _pk_room_key(pid)
+    room = PK_ROOMS.get(key)
+    if not room:
+        rec = q("SELECT * FROM pk_challenge WHERE id=%s", (pid,), one=True)
+        if not rec or rec['status'] not in ('waiting', 'ready', 'playing', 'finished'):
+            return
+        room = PK_ROOMS[key] = {
+            'challenger': rec['challenger_uid'],
+            'opponent': rec['opponent_uid'],
+            'status': rec['status'],
+            'questions': [int(x) for x in rec['question_ids'].split(',')],
+            'current_q': -1,
+            'scores': {rec['challenger_uid']: 0, rec['opponent_uid']: 0},
+            'answers': {}, 'answered': {}, 'seq': {},
+            'ready': set(), 'sids': {}, 'watchers': set(),
+            'theme': rec.get('theme') or 'day',
+        }
+    join_room(key)
+    room.setdefault('watchers', set()).add(request.sid)
+    emit('watch_count', {'n': len(room['watchers'])}, room=key)
+    players = [
+        {'uid': room['challenger'], 'ready': room['challenger'] in room['ready']},
+        {'uid': room['opponent'], 'ready': room['opponent'] in room['ready']},
+    ]
+    emit('room_state', {'players': players, 'status': room['status']})
 
 
 @socketio.on('pk_ready')
@@ -2175,6 +2600,13 @@ def pk_emoji(data):
         emit('emoji', {'from': uid, 'emoji': emoji}, room=sid)
 
 
+def _pk_seq_str(room, uid):
+    """C15 回放：按题目顺序拼合作答串，未作答记 '_'"""
+    seq = room.get('seq', {})
+    return ''.join(seq.get(i, {}).get(uid, '_')
+                   for i in range(PK_QUESTION_COUNT))[:20]
+
+
 def _pk_finish(key, room, force_winner=None):
     """游戏结束：判定胜负，更新战绩（force_winner 用于认输/中途退出判负）"""
     room['status'] = 'finished'
@@ -2189,11 +2621,13 @@ def _pk_finish(key, room, force_winner=None):
     else:
         winner = None  # 平局
 
-    # 更新数据库
+    # 更新数据库（含双方作答序列，供对局回放）
     execute("UPDATE pk_challenge SET status='finished', "
             "challenger_score=%s, opponent_score=%s, winner_uid=%s, "
+            "challenger_answers=%s, opponent_answers=%s, "
             "finished_at=CURRENT_TIMESTAMP WHERE id=%s",
-            (cs, os_, winner, int(key.split('_')[1])))
+            (cs, os_, winner, _pk_seq_str(room, room['challenger']),
+             _pk_seq_str(room, room['opponent']), int(key.split('_')[1])))
 
     if winner:
         # 胜方：胜场+1，连胜+1
@@ -2249,6 +2683,58 @@ def pk_leave(data):
     # 等待/准备阶段：房间作废，双方回大厅
     execute("UPDATE pk_challenge SET status='declined' WHERE id=%s", (pid,))
     emit('room_closed', room=key)
+    PK_ROOMS.pop(key, None)
+
+
+@socketio.on('pk_rematch')
+def pk_rematch(data):
+    """C1 再战一局：双方点击后用相同题型配置直接开新局（新房间码）"""
+    pid = data.get('pid')
+    key = _pk_room_key(pid)
+    room = PK_ROOMS.get(key)
+    if not room:
+        rec = q("SELECT * FROM pk_challenge WHERE id=%s AND status='finished'",
+                (pid,), one=True)
+        if not rec:
+            return
+        room = PK_ROOMS[key] = {
+            'challenger': rec['challenger_uid'],
+            'opponent': rec['opponent_uid'],
+            'status': 'finished',
+            'questions': [int(x) for x in rec['question_ids'].split(',')],
+            'current_q': -1,
+            'scores': {rec['challenger_uid']: 0, rec['opponent_uid']: 0},
+            'answers': {}, 'answered': {}, 'seq': {},
+            'ready': set(), 'sids': {}, 'watchers': set(),
+            'theme': rec.get('theme') or 'day',
+        }
+    uid = _session_uid()
+    if uid not in (room['challenger'], room['opponent']):
+        return
+    rematch = room.setdefault('rematch', set())
+    rematch.add(uid)
+    emit('rematch_wait', {'n': len(rematch)}, room=key)
+    if len(rematch) < 2:
+        return
+    # 双方都同意：同题重洗，开新局
+    random.shuffle(room['questions'])
+    new_pid = execute(
+        "INSERT INTO pk_challenge (challenger_uid, opponent_uid, question_ids, "
+        "theme, status) VALUES (%s, %s, %s, %s, 'waiting')",
+        (room['challenger'], room['opponent'],
+         ','.join(map(str, room['questions'])), room.get('theme') or 'day'))
+    PK_ROOMS[_pk_room_key(new_pid)] = {
+        'challenger': room['challenger'],
+        'opponent': room['opponent'],
+        'status': 'waiting',
+        'questions': list(room['questions']),
+        'current_q': -1,
+        'scores': {room['challenger']: 0, room['opponent']: 0},
+        'answers': {}, 'answered': {}, 'seq': {},
+        'ready': set(), 'sids': {}, 'watchers': set(),
+        'theme': room.get('theme') or 'day',
+    }
+    emit('rematch_go', {'pid': new_pid}, room=key)
     PK_ROOMS.pop(key, None)
 
 
