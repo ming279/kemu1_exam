@@ -49,8 +49,9 @@
   </aside>
 
   <div class="exam-questions">
-    <h2>{{ task.title if is_task else '模拟考试' }}（第 {{ pid }} 卷）</h2>
+    <h2>{{ task.title if is_task else '模拟考试' }}</h2>
     <p class="muted">
+      开考时间：{{ started_at }} ｜
       共 {{ total }} 题：判断题 {{ judges|length }} 题 + 选择题 {{ singles|length }} 题
       {% if is_task %}｜ 模式：{{ '考试' if task.mode == 'exam' else '练习' }}
       {% if task.time_limit_sec %}｜ 时限：{{ task.time_limit_sec // 60 }} 分钟{% endif %}{% endif %}
