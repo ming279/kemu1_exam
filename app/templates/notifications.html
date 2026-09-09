@@ -2,9 +2,52 @@
 {% block title %}站内通知{% endblock %}
 {% block content %}
 <h2>🔔 站内通知</h2>
+
+{% if students is not none %}
+<!-- 管理员：发通知 -->
+<div class="card" style="border:1px solid #bfdbfe;background:#f8fbff;">
+  <h3 style="margin-top:0;">📢 发送通知</h3>
+  <form method="post" action="{{ url_for('notification_send') }}">
+    <div style="margin-bottom:10px;">
+      <label style="margin-right:16px;font-size:14px;">
+        <input type="radio" name="target" value="all" checked onchange="document.getElementById('stu-pick').style.display='none'"> 全体学生
+      </label>
+      <label style="font-size:14px;">
+        <input type="radio" name="target" value="pick" onchange="document.getElementById('stu-pick').style.display='block'"> 指定学生
+      </label>
+    </div>
+    <div id="stu-pick" style="display:none;max-height:120px;overflow-y:auto;border:1px solid var(--line);border-radius:8px;padding:8px 12px;margin-bottom:10px;">
+      {% for s in students %}
+      <label style="display:inline-block;width:160px;font-size:14px;margin:2px 0;">
+        <input type="checkbox" name="uids" value="{{ s.id }}">
+        {{ s.real_name or s.username }} <span class="muted">({{ s.username }})</span>
+      </label>
+      {% else %}
+      <span class="muted">暂无学生账号</span>
+      {% endfor %}
+    </div>
+    <textarea name="content" rows="2" maxlength="200" required placeholder="通知内容（200 字以内），如：今晚 8 点发布模拟考任务，请准时参加"
+              style="width:100%;padding:9px 12px;border:1px solid var(--line);border-radius:8px;margin-bottom:10px;resize:vertical;"></textarea>
+    <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
+      <label style="font-size:14px;">点击通知跳转：
+        <select name="link" style="padding:6px;">
+          <option value="">不跳转</option>
+          <option value="exam">模拟考试</option>
+          <option value="practice">练习中心</option>
+          <option value="tasks">我的任务</option>
+          <option value="pk">PK 大厅</option>
+        </select>
+      </label>
+      <button class="btn" type="submit">📨 发送</button>
+      <span class="muted" style="font-size:12px;">在线学生将立即收到铃铛提醒，离线学生下次登录可见</span>
+    </div>
+  </form>
+</div>
+{% endif %}
+
 <div class="card">
   {% if not notis %}
-  <p class="muted">暂无通知。任务发布、PK 挑战邀请都会出现在这里。</p>
+  <p class="muted">暂无通知。任务发布、PK 挑战邀请{% if students is not none %}、管理员通知{% endif %}都会出现在这里。</p>
   {% endif %}
   {% for n in notis %}
   <div class="noti-item">

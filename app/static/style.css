@@ -98,6 +98,15 @@ html { scroll-behavior:smooth; }
 .noti-item .noti-time { color:#6b7280; font-size:13px; white-space:nowrap; }
 .noti-item .noti-content { flex:1; }
 
+/* 实时通知右下角弹窗 */
+.noti-toast { position:fixed; right:20px; bottom:24px; z-index:2000; max-width:340px;
+  background:var(--brand); color:#fff; padding:12px 18px; border-radius:10px;
+  box-shadow:0 10px 30px rgba(37,99,235,.4); font-size:14px; line-height:1.5;
+  cursor:pointer; opacity:0; transform:translateY(16px);
+  transition:opacity .35s ease, transform .35s ease; }
+.noti-toast.show { opacity:1; transform:translateY(0); }
+.noti-toast:hover { filter:brightness(1.08); }
+
 /* ---- C5 题目标记 / C2 切屏提示 ---- */
 .ac-cell.marked { background:#ffedd5; }
 .ac-cell.marked .ac-dot { background:#f97316; border-color:#f97316; }
