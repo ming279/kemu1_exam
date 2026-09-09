@@ -55,7 +55,7 @@
       <td>{{ p.score if p.status == 'finished' else '—' }}</td>
       <td>{{ '已完成' if p.status == 'finished' else '进行中' }}</td>
       <td>{{ p.submitted_at or '—' }}</td>
-      <td>{% if p.status == 'finished' %}<a href="{{ url_for('exam_result', pid=p.id) }}">查看成绩单</a>{% endif %}</td>
+      <td>{% if p.status == 'finished' %}<a href="{{ url_for('exam_result', pid=p.id) }}">查看成绩单</a>{% else %}<a href="{{ url_for('exam_page', pid=p.id) }}">继续作答 / 交卷</a>{% endif %}</td>
     </tr>
     {% else %}<tr><td colspan="7" class="muted">暂无考试记录</td></tr>{% endfor %}
   </table>
