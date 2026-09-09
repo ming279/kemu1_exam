@@ -210,23 +210,53 @@ def index():
         my_wrong=q("SELECT COUNT(*) c FROM wrong_book WHERE user_id=%s "
                    "AND mastered=0", (session['uid'],), one=True)['c'],
     )
-    # 学生：查询待完成任务（published 且未完成）
+    # 学生：我的任务（待完成 + 已完成两块）
     my_tasks = []
+    my_done_tasks = []
     me = current_user()
     if me and me['role'] == 'student':
-        my_tasks = q(
-            "SELECT t.id, t.title, t.judge_count, t.single_count, "
-            "t.time_limit_sec, t.mode, t.purpose, t.created_at, "
-            "tr.status AS my_status "
-            "FROM task t LEFT JOIN task_record tr "
-            "ON tr.task_id=t.id AND tr.uid=%s "
-            "WHERE t.status='published' "
-            "AND (t.target_uids IS NULL OR t.target_uids='' "
-            "     OR FIND_IN_SET(%s, t.target_uids)) "
-            "AND (tr.status IS NULL OR tr.status='in_progress') "
-            "ORDER BY t.id DESC",
-            (session['uid'], session['uid']))
-    return render_template('index.html', stats=stats, my_tasks=my_tasks)
+        my_tasks, my_done_tasks = _my_task_data(session['uid'])
+    return render_template('index.html', stats=stats,
+                           my_tasks=my_tasks, my_done_tasks=my_done_tasks)
+
+
+def _my_task_data(uid):
+    """返回学生的任务数据：(待完成/进行中列表, 已完成列表)。
+    已完成记录不受任务关闭影响，始终可回看成绩单。"""
+    pending = q(
+        "SELECT t.id, t.title, t.judge_count, t.single_count, "
+        "t.time_limit_sec, t.mode, t.purpose, t.created_at, "
+        "tr.status AS my_status "
+        "FROM task t LEFT JOIN task_record tr "
+        "ON tr.task_id=t.id AND tr.uid=%s "
+        "WHERE t.status='published' "
+        "AND (t.target_uids IS NULL OR t.target_uids='' "
+        "     OR FIND_IN_SET(%s, t.target_uids)) "
+        "AND (tr.status IS NULL OR tr.status='in_progress') "
+        "ORDER BY t.id DESC",
+        (uid, uid))
+    done = q(
+        "SELECT t.id, t.title, t.judge_count, t.single_count, "
+        "t.mode, t.purpose, t.status AS task_status, "
+        "tr.paper_id, tr.submit_time, "
+        "p.score, p.total_count, "
+        "COALESCE(NULLIF(tr.elapsed_sec, 0), "
+        "  TIMESTAMPDIFF(SECOND, tr.start_time, tr.submit_time)) AS used_sec "
+        "FROM task_record tr "
+        "JOIN task t ON t.id = tr.task_id "
+        "LEFT JOIN exam_paper p ON p.id = tr.paper_id "
+        "WHERE tr.uid=%s AND tr.status='completed' "
+        "ORDER BY tr.submit_time DESC",
+        (uid,))
+    return pending, done
+
+
+@app.route('/my-tasks')
+@login_required
+def my_tasks_page():
+    """学生"我的任务"独立页：待完成/进行中 + 已完成（可回看成绩单）"""
+    pending, done = _my_task_data(session['uid'])
+    return render_template('my_tasks.html', pending=pending, done=done)
 
 
 # ---------------- exam 模块 ----------------
@@ -552,8 +582,10 @@ def wrongbook_clear():
 def stats():
     me = q("SELECT * FROM v_user_stat WHERE user_id=%s",
            (session['uid'],), one=True)
-    my_papers = q("SELECT id, total_count, score, status, started_at, submitted_at "
-                  "FROM exam_paper WHERE user_id=%s ORDER BY id DESC LIMIT 10",
+    my_papers = q("SELECT p.id, p.total_count, p.score, p.status, "
+                  "p.started_at, p.submitted_at, t.title AS task_title "
+                  "FROM exam_paper p LEFT JOIN task t ON t.id = p.task_id "
+                  "WHERE p.user_id=%s ORDER BY p.id DESC LIMIT 10",
                   (session['uid'],))
     # 我的易错题 TOP10（按错误次数）
     my_weak = q(

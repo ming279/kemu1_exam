@@ -46,16 +46,18 @@
 <div class="card">
   <h3>最近考试记录</h3>
   <table>
-    <tr><th>试卷号</th><th>题数</th><th>得分</th><th>状态</th><th>提交时间</th><th></th></tr>
+    <tr><th>试卷号</th><th>来源</th><th>题数</th><th>得分</th><th>状态</th><th>提交时间</th><th></th></tr>
     {% for p in papers %}
     <tr>
-      <td>{{ p.id }}</td><td>{{ p.total_count }}</td>
+      <td>{{ p.id }}</td>
+      <td>{{ p.task_title or '模拟考试' }}</td>
+      <td>{{ p.total_count }}</td>
       <td>{{ p.score if p.status == 'finished' else '—' }}</td>
       <td>{{ '已完成' if p.status == 'finished' else '进行中' }}</td>
       <td>{{ p.submitted_at or '—' }}</td>
       <td>{% if p.status == 'finished' %}<a href="{{ url_for('exam_result', pid=p.id) }}">查看成绩单</a>{% endif %}</td>
     </tr>
-    {% else %}<tr><td colspan="6" class="muted">暂无考试记录</td></tr>{% endfor %}
+    {% else %}<tr><td colspan="7" class="muted">暂无考试记录</td></tr>{% endfor %}
   </table>
 </div>
 
