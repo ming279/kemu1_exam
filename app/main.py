@@ -2685,22 +2685,43 @@ def pk_answer(data):
         }, room=key)
 
 
-@socketio.on('pk_emoji')
-def pk_emoji(data):
-    """快捷表情"""
+PK_CHAT_EMOJIS = ('😊', '😂', '😤', '👍', '🎉')
+PK_CHAT_TAUNTS = ('我要超你了，小心', '就这还想超我', '再练练吧', '等等我', '加油')
+
+
+@socketio.on('pk_chat')
+def pk_chat(data):
+    """快捷互动（表情/预设喊话）：玩家与观战者均可发，全房间广播可见。
+    文字只允许白名单预设句，表情只允许白名单表情，防刷屏/灌水。"""
     pid = data.get('pid')
-    emoji = data.get('emoji', '')
     key = _pk_room_key(pid)
     room = PK_ROOMS.get(key)
     if not room:
         return
     uid = _session_uid()
-    if uid not in (room['challenger'], room['opponent']):
+    is_watcher = request.sid in room.get('watchers', set())
+    if not is_watcher and uid not in (room['challenger'], room['opponent']):
         return
-    other = room['opponent'] if uid == room['challenger'] else room['challenger']
-    sid = room['sids'].get(other)
-    if sid:
-        emit('emoji', {'from': uid, 'emoji': emoji}, room=sid)
+    kind = data.get('kind', '')
+    value = (data.get('value') or '').strip()
+    if kind == 'emoji':
+        if value not in PK_CHAT_EMOJIS:
+            return
+    elif kind == 'text':
+        if value not in PK_CHAT_TAUNTS:
+            return
+    else:
+        return
+    u = q("SELECT username, real_name FROM `user` WHERE id=%s", (uid,), one=True)
+    name = (u['real_name'] or u['username']) if u else ''
+    if is_watcher:
+        role = 'watcher'
+    elif uid == room['challenger']:
+        role = 'c'
+    else:
+        role = 'o'
+    emit('pk_chat', {'kind': kind, 'value': value, 'from': uid,
+                     'role': role, 'name': name}, room=key)
 
 
 def _pk_seq_str(room, uid):
