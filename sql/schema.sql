@@ -82,6 +82,7 @@ CREATE TABLE `user` (
     pk_wins       INT NOT NULL DEFAULT 0 COMMENT 'PK胜场',
     pk_losses     INT NOT NULL DEFAULT 0 COMMENT 'PK负场',
     win_streak    INT NOT NULL DEFAULT 0 COMMENT '连胜场次',
+    login_token   VARCHAR(32) DEFAULT NULL COMMENT '最新登录令牌（同账号新登录踢旧会话）',
     created_at    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) COMMENT '用户';
 
@@ -298,6 +299,35 @@ CREATE TABLE pk_challenge (
     CONSTRAINT fk_pk_c FOREIGN KEY (challenger_uid) REFERENCES `user` (id),
     CONSTRAINT fk_pk_o FOREIGN KEY (opponent_uid) REFERENCES `user` (id)
 ) COMMENT '双人PK对战';
+
+-- -------------------------------------------------------------
+-- 20. 题目纠错上报表（学生举报 -> 管理员审核）
+-- -------------------------------------------------------------
+CREATE TABLE question_report (
+    id          INT AUTO_INCREMENT PRIMARY KEY,
+    question_id INT NOT NULL COMMENT '被举报的题目',
+    uid         INT NOT NULL COMMENT '举报人',
+    reason      VARCHAR(500) NOT NULL COMMENT '举报原因',
+    status      ENUM('pending','resolved') NOT NULL DEFAULT 'pending' COMMENT '处理状态',
+    created_at  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_status (status),
+    CONSTRAINT fk_rp_q FOREIGN KEY (question_id) REFERENCES question (id) ON DELETE CASCADE,
+    CONSTRAINT fk_rp_u FOREIGN KEY (uid) REFERENCES `user` (id) ON DELETE CASCADE
+) COMMENT '题目纠错上报';
+
+-- -------------------------------------------------------------
+-- 21. 站内通知表（任务发布 / 被 PK 挑战）
+-- -------------------------------------------------------------
+CREATE TABLE notification (
+    id         INT AUTO_INCREMENT PRIMARY KEY,
+    uid        INT NOT NULL COMMENT '接收人',
+    content    VARCHAR(200) NOT NULL COMMENT '通知内容',
+    url        VARCHAR(200) NULL COMMENT '点击跳转地址',
+    is_read    BOOLEAN NOT NULL DEFAULT FALSE COMMENT '是否已读',
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_un (uid, is_read),
+    CONSTRAINT fk_nt_u FOREIGN KEY (uid) REFERENCES `user` (id) ON DELETE CASCADE
+) COMMENT '站内通知';
 
 -- =============================================================
 -- 统计视图
