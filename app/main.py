@@ -825,18 +825,25 @@ def stats():
 
     # C10 过考概率（最近 5 场均分）
     prob = _pass_probability([float(p['score']) for p in done])
-    # C9 能力雷达：练习正确率按一级分类聚合
+    # C9 能力雷达：练习正确率按一级分类聚合（全部分类都显示，未练习=0）
     radar_rows = q(
-        "SELECT COALESCE(c2.name, c1.name, '未分类') AS root_name, "
-        "COUNT(*) AS attempts, SUM(pr.is_correct) AS corrects "
-        "FROM practice pr JOIN question q ON q.id=pr.question_id "
-        "LEFT JOIN category c1 ON c1.id=q.category_id "
-        "LEFT JOIN category c2 ON c2.id=c1.parent_id "
-        "WHERE pr.user_id=%s GROUP BY root_name ORDER BY attempts DESC",
+        "SELECT rc.name AS root_name, "
+        "COALESCE(s.attempts, 0) AS attempts, COALESCE(s.corrects, 0) AS corrects "
+        "FROM category rc "
+        "LEFT JOIN ( "
+        "  SELECT COALESCE(c2.id, c1.id) AS root_id, "
+        "         COUNT(*) AS attempts, SUM(pr.is_correct) AS corrects "
+        "  FROM practice pr "
+        "  JOIN question q ON q.id=pr.question_id "
+        "  JOIN category c1 ON c1.id=q.category_id "
+        "  LEFT JOIN category c2 ON c2.id=c1.parent_id "
+        "  WHERE pr.user_id=%s GROUP BY root_id "
+        ") s ON s.root_id=rc.id "
+        "WHERE rc.parent_id IS NULL ORDER BY rc.id",
         (session['uid'],))
     radar_names = [r['root_name'] for r in radar_rows]
-    radar_values = [round(float(r['corrects'] or 0) * 100.0 / r['attempts'], 1)
-                    for r in radar_rows]
+    radar_values = [round(float(r['corrects']) * 100.0 / r['attempts'], 1)
+                    if r['attempts'] else 0 for r in radar_rows]
     # C11 学习热力图（近 12 个月每天练习作答量）
     heat_raw = q("SELECT DATE(practiced_at) d, COUNT(*) c FROM practice "
                  "WHERE user_id=%s AND practiced_at >= "
