@@ -1695,11 +1695,12 @@ def _pk_badge(wins):
 @app.route('/ranking')
 @login_required
 def ranking():
-    """学生排名：考试排名（按平均分）+ 练习排名（按总正确题数）"""
+    """学生排名：考试排名（按平均分）+ 练习排名（按总正确题数）
+    上榜门槛：考试至少完成1场；练习至少答对1题。同分并列（1,1,3 奥运式）。"""
     me = current_user()
-    # 考试排名：按平均分降序（只统计已完成的试卷）
-    exam_rank = q(
-        "SELECT u.id, u.username, u.real_name, u.pk_wins, u.win_streak, "
+    # 考试排名：按平均分降序 → 最高分 → 场次（只统计已交卷）
+    exam_all = q(
+        "SELECT u.id, u.username, u.real_name, "
         "COUNT(ep.id) AS exam_count, "
         "ROUND(AVG(ep.score),1) AS avg_score, "
         "SUM(CASE WHEN ep.score>=90 THEN 1 ELSE 0 END) AS pass_count, "
@@ -1707,42 +1708,52 @@ def ranking():
         "FROM `user` u "
         "LEFT JOIN exam_paper ep ON ep.user_id=u.id AND ep.status='finished' "
         "WHERE u.role='student' "
-        "GROUP BY u.id, u.username, u.real_name, u.pk_wins, u.win_streak "
-        "ORDER BY avg_score DESC, exam_count DESC")
+        "GROUP BY u.id, u.username, u.real_name "
+        "ORDER BY avg_score DESC, best_score DESC, exam_count DESC")
 
-    # 练习排名：按总正确题数降序
-    practice_rank = q(
-        "SELECT u.id, u.username, u.real_name, u.pk_wins, u.win_streak, "
+    # 练习排名：按总正确题数降序 → 正确率 → 练习题数
+    prac_all = q(
+        "SELECT u.id, u.username, u.real_name, "
         "COUNT(pr.id) AS practice_count, "
         "SUM(pr.is_correct) AS correct_count, "
         "ROUND(SUM(pr.is_correct)*100.0/GREATEST(COUNT(pr.id),1),1) AS correct_rate "
         "FROM `user` u "
         "LEFT JOIN practice pr ON pr.user_id=u.id "
         "WHERE u.role='student' "
-        "GROUP BY u.id, u.username, u.real_name, u.pk_wins, u.win_streak "
-        "ORDER BY correct_count DESC, practice_count DESC")
+        "GROUP BY u.id, u.username, u.real_name "
+        "ORDER BY correct_count DESC, correct_rate DESC, practice_count DESC")
 
-    # 为每行附加排名和徽章
-    for i, r in enumerate(exam_rank, 1):
-        r['rank'] = i
-        r['badge'] = _pk_badge(r['pk_wins'] or 0)
-    for i, r in enumerate(practice_rank, 1):
-        r['rank'] = i
-        r['badge'] = _pk_badge(r['pk_wins'] or 0)
+    # 上榜门槛拆分
+    exam_rank = [r for r in exam_all if (r['exam_count'] or 0) >= 1]
+    exam_unranked = [r for r in exam_all if (r['exam_count'] or 0) < 1]
+    prac_rank = [r for r in prac_all if (r['correct_count'] or 0) >= 1]
+    prac_unranked = [r for r in prac_all if (r['correct_count'] or 0) < 1]
 
-    # 当前用户在两个榜单中的排名
+    # 同分并列名次：按主指标（平均分/正确题数）判定，兜底键只决定展示顺序
+    def assign_ties(rows, keyfn):
+        last_key, rank = None, 0
+        for i, r in enumerate(rows, 1):
+            k = keyfn(r)
+            if k != last_key:
+                rank, last_key = i, k
+            r['rank'] = rank
+    assign_ties(exam_rank, lambda r: r['avg_score'])
+    assign_ties(prac_rank, lambda r: r['correct_count'])
+
+    # 当前用户在两个榜单中的排名（未上榜为 None）
     my_exam_rank = next((r['rank'] for r in exam_rank if r['id'] == me['id']), None)
-    my_prac_rank = next((r['rank'] for r in practice_rank if r['id'] == me['id']), None)
+    my_prac_rank = next((r['rank'] for r in prac_rank if r['id'] == me['id']), None)
 
     # ---- 图表数据：考试分数段分布 ----
     import json
     seg = q(
         "SELECT bucket, COUNT(*) cnt FROM ( "
-        "SELECT CASE WHEN score<60 THEN '不及格(<60)' "
-        "WHEN score<70 THEN '及格(60-69)' WHEN score<80 THEN '中等(70-79)' "
-        "WHEN score<90 THEN '良好(80-89)' ELSE '优秀(≥90)' END AS bucket, score "
+        "SELECT CASE WHEN score<90 THEN '不及格(<90)' "
+        "WHEN score<95 THEN '及格(90-94)' "
+        "WHEN score<100 THEN '优秀(95-99)' "
+        "ELSE '满分(100)' END AS bucket, score "
         "FROM exam_paper WHERE status='finished') t GROUP BY bucket")
-    seg_order = ['不及格(<60)', '及格(60-69)', '中等(70-79)', '良好(80-89)', '优秀(≥90)']
+    seg_order = ['不及格(<90)', '及格(90-94)', '优秀(95-99)', '满分(100)']
     seg_map = {r['bucket']: r['cnt'] for r in seg}
     # PK 战绩饼图
     pk_stat = q(
@@ -1759,7 +1770,8 @@ def ranking():
     )
 
     return render_template('ranking.html',
-                           exam_rank=exam_rank, practice_rank=practice_rank,
+                           exam_rank=exam_rank, exam_unranked=exam_unranked,
+                           practice_rank=prac_rank, prac_unranked=prac_unranked,
                            my_exam_rank=my_exam_rank, my_prac_rank=my_prac_rank,
                            me=me, charts=charts)
 
