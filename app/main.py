@@ -2127,6 +2127,16 @@ def _pk_room_key(pid):
     return f'pk_{pid}'
 
 
+def _pk_emit_state(key, room):
+    """向全房间推送双方准备状态（客户端以此为准渲染按钮，可自愈重连丢状态）"""
+    players = [
+        {'uid': room['challenger'], 'ready': room['challenger'] in room['ready']},
+        {'uid': room['opponent'], 'ready': room['opponent'] in room['ready']},
+    ]
+    emit('room_state', {'players': players, 'status': room['status']}, room=key)
+    return players
+
+
 def _pk_recent_qids(uids, games=3):
     """两名玩家最近 games 场 PK 出过的题（抽题去重用）。
     每人最多 games 场，故取 games*2 行覆盖双方。"""
@@ -2500,12 +2510,8 @@ def pk_join(data):
     join_room(key)
     room['sids'][uid] = request.sid
 
-    # 通知房间内双方当前状态
-    players = [
-        {'uid': room['challenger'], 'ready': room['challenger'] in room['ready']},
-        {'uid': room['opponent'], 'ready': room['opponent'] in room['ready']},
-    ]
-    emit('room_state', {'players': players, 'status': room['status']}, room=key)
+    # 通知房间内双方当前状态（重连方据此自动恢复"已准备"按钮/补报）
+    _pk_emit_state(key, room)
 
 
 @socketio.on('watch_join')
@@ -2572,7 +2578,7 @@ def pk_ready(data):
     if uid not in (room['challenger'], room['opponent']):
         return
     room['ready'].add(uid)
-    emit('player_ready', {'uid': uid}, room=key)
+    _pk_emit_state(key, room)
 
     # 双方都准备 -> 开始倒计时
     if room['challenger'] in room['ready'] and room['opponent'] in room['ready']:
