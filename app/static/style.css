@@ -159,3 +159,33 @@ body.dark .switch-warn { background:#431407; border-color:#9a3412; color:#fdba74
 body.dark .ai-explain-box { background:#2e1065; color:#ddd6fe; }
 body.dark .search-input, body.dark .explanation-input { background:var(--card); color:#e2e8f0; border-color:var(--line); }
 body.dark .replay-chip.none { background:#475569; }
+
+/* ---- C11 GitHub 风格贡献热力图（DOM 方格） ---- */
+.gh-heatmap { overflow-x:auto; padding:6px 2px 2px; }
+.gh-months { display:flex; margin-left:26px; margin-bottom:4px; }
+.gh-month-slot { flex:none; width:15px; font-size:11px; line-height:1; color:#6b7280; white-space:nowrap; }
+.gh-body { display:flex; align-items:flex-start; }
+.gh-dow { flex:none; width:22px; margin-right:4px; }
+.gh-dow-cell { height:12px; margin-bottom:3px; font-size:10px; line-height:12px; color:#6b7280; }
+.gh-weeks { display:flex; }
+.gh-week { flex:none; display:flex; flex-direction:column; margin-right:3px; }
+.gh-cell { width:12px; height:12px; border-radius:2px; margin-bottom:3px; background:#ebedf0;
+  box-shadow: inset 0 0 0 1px rgba(27,31,35,.05); }
+.gh-week .gh-cell:last-child { margin-bottom:0; }
+.gh-dow-cell:last-child { margin-bottom:0; }
+.gh-cell.lvl1 { background:#9be9a8; }
+.gh-cell.lvl2 { background:#40c463; }
+.gh-cell.lvl3 { background:#30a14e; }
+.gh-cell.lvl4 { background:#216e39; }
+.gh-cell.gh-empty { background:transparent; box-shadow:none; }
+.gh-legend { display:flex; align-items:center; gap:3px; justify-content:flex-end; margin-top:10px;
+  font-size:11px; color:#6b7280; }
+.gh-legend .gh-cell { margin-bottom:0; }
+.gh-legend span { margin:0 4px; }
+/* 深色模式：GitHub dark 配色 */
+body.dark .gh-month-slot, body.dark .gh-dow-cell, body.dark .gh-legend { color:#94a3b8; }
+body.dark .gh-cell.lvl0 { background:#161b22; box-shadow: inset 0 0 0 1px rgba(255,255,255,.06); }
+body.dark .gh-cell.lvl1 { background:#0e4429; box-shadow:none; }
+body.dark .gh-cell.lvl2 { background:#006d32; box-shadow:none; }
+body.dark .gh-cell.lvl3 { background:#26a641; box-shadow:none; }
+body.dark .gh-cell.lvl4 { background:#39d353; box-shadow:none; }
