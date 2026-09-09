@@ -239,7 +239,8 @@
   <div class="vh-card" id="vh-card">
     <div class="vh-score" id="vh-score"><span class="me">0</span> : <span>0</span></div>
     <div class="vh-detail" id="vh-detail">你答对 0 题，对手答对 0 题</div>
-    <a href="{{ url_for('pk_lobby') }}" class="btn">返回大厅</a>
+    <button class="btn" id="btn-rematch" style="margin-right:10px;">🔄 再战一局</button>
+    <a href="{{ url_for('pk_lobby') }}" class="btn secondary">返回大厅</a>
   </div>
 </div>
 
@@ -254,9 +255,28 @@ var CHALLENGER_UID = {{ rec.challenger_uid }};   // 发起方固定左道红车�
 var Q_TIME = {{ q_time }};
 var NAME_C = {{ rec.c_name|tojson }};
 var NAME_O = {{ rec.o_name|tojson }};
+var IS_WATCHER = {{ 'true' if is_watcher else 'false' }};   // C14 观战模式
+var THEME = {{ theme|tojson }};                              // C16 赛道皮肤
 var socket = io();
 var myAnswered = false;
 var timerHandle = null;
+
+/* ---- C16 赛道皮肤调色板（day/night/rain/desert） ---- */
+var THEMES = {
+  day:    { grass:'#152238', kerbA:'#dc2626', kerbB:'#f8fafc', tree:'#2f6b3f',
+            trunk:'#7c5b3a', stone:'#3b4a63', lampGlow:true, rain:false,
+            board1:'#dc2626', board2:'#1d4ed8' },
+  night:  { grass:'#0a0f1e', kerbA:'#7c3aed', kerbB:'#e2e8f0', tree:'#1e3a5f',
+            trunk:'#475569', stone:'#334155', lampGlow:true, rain:false,
+            board1:'#a78bfa', board2:'#22d3ee', neon:true },
+  rain:   { grass:'#132030', kerbA:'#b45309', kerbB:'#e7e5e4', tree:'#3f6212',
+            trunk:'#57534e', stone:'#44403c', lampGlow:false, rain:true,
+            board1:'#0284c7', board2:'#155e75' },
+  desert: { grass:'#78591f', kerbA:'#b91c1c', kerbB:'#fef3c7', tree:'#4d7c0f',
+            trunk:'#92400e', stone:'#a16207', lampGlow:false, rain:false,
+            board1:'#ea580c', board2:'#a16207', sand:true }
+};
+var PAL = THEMES[THEME] || THEMES.day;
 
 /* ===================== 全屏特效 Canvas（结算用烟花+彩带） ===================== */
 var fvCV = document.getElementById('fx-canvas');
@@ -591,8 +611,8 @@ function drawScene(){
 
   var roadL = W*0.10, roadR = W*0.90;
 
-  // 路面外的"草地"
-  ctx.fillStyle = '#152238';
+  // 路面外的"草地"（沙漠为沙地色）
+  ctx.fillStyle = PAL.grass;
   ctx.fillRect(0, 0, W, H);
 
   // 路面：底色 + 沥青颗粒纹理 + 轮胎磨痕（裁剪到路面区域）
@@ -699,6 +719,17 @@ function drawScene(){
   // 起跑红绿灯
   if (race.lightsN > 0 || race.greenT > 0) drawLights(midX, H*0.40);
 
+  // C16 雨天皮肤：斜落雨丝 + 路面反光
+  if (PAL.rain){
+    ctx.strokeStyle = 'rgba(200,220,255,.35)'; ctx.lineWidth = 1;
+    for (var ri = 0; ri < 70; ri++){
+      var rx = Math.random() * W, ry = Math.random() * H;
+      ctx.beginPath(); ctx.moveTo(rx, ry); ctx.lineTo(rx - 4, ry + 14); ctx.stroke();
+    }
+    ctx.fillStyle = 'rgba(160,200,255,.05)';
+    ctx.fillRect(roadL, 0, roadR-roadL, H);
+  }
+
   ctx.restore();
 }
 function drawTree(x, y){
@@ -735,9 +766,9 @@ function drawBillboard(x, y){
   ctx.strokeRect(x-22, y-24, 44, 22);
   // 广告词
   ctx.font = 'bold 9px sans-serif'; ctx.textAlign = 'center';
-  ctx.fillStyle = '#dc2626';
+  ctx.fillStyle = PAL.board1;
   ctx.fillText('科目一', x, y-14);
-  ctx.fillStyle = '#1d4ed8';
+  ctx.fillStyle = PAL.board2;
   ctx.fillText('一把过！', x, y-5);
 }
 function drawCrowd(x, y){
@@ -888,12 +919,29 @@ function loop(ts){
 requestAnimationFrame(loop);
 
 /* ===================== Socket 事件 ===================== */
-socket.on('connect', function() { socket.emit('pk_join', {pid: PID}); });
+socket.on('connect', function() {
+  // C14 观战者走只读通道，玩家走对局通道
+  socket.emit(IS_WATCHER ? 'watch_join' : 'pk_join', {pid: PID});
+  if (IS_WATCHER) {
+    document.getElementById('watch-badge').style.display = 'block';
+    document.getElementById('ready-status').textContent = '👀 观战模式：等待对局开始…';
+    document.getElementById('btn-ready').style.display = 'none';
+    document.getElementById('btn-exit').textContent = '退出观战';
+    document.getElementById('btn-exit').onclick = function () { location.href = '/pk'; };
+  }
+});
+
+// C14 观战人数实时更新
+socket.on('watch_count', function (d) {
+  document.getElementById('watch-n').textContent = d.n;
+  document.getElementById('watch-badge').style.display = 'block';
+});
 
 socket.on('room_state', function(d) {
   var readyCount = d.players.filter(function(p){return p.ready;}).length;
-  document.getElementById('ready-status').textContent =
-    '准备状态：' + readyCount + '/2 人已准备';
+  document.getElementById('ready-status').textContent = IS_WATCHER
+    ? '👀 观战中 · 双方准备 ' + readyCount + '/2'
+    : '准备状态：' + readyCount + '/2 人已准备';
   var b = document.getElementById('opp-banner');
   if (b) b.style.display = 'none';
 });
@@ -947,6 +995,14 @@ socket.on('go', function() {
   SFX.go();
   fxTire('c'); fxTire('o');   // 弹射起步轮胎烟
   document.getElementById('play-panel').style.display = 'block';
+  // 观战者不参与答题与认输
+  if (IS_WATCHER) {
+    document.getElementById('btn-concede').style.display = 'none';
+    var ep = document.getElementById('btn-exit-play');
+    var nep = ep.cloneNode(true);
+    nep.addEventListener('click', function () { location.href = '/pk'; });
+    ep.parentNode.replaceChild(nep, ep);
+  }
 });
 
 // 下一题
@@ -1076,7 +1132,9 @@ function popFeedback(text, color) {
   setTimeout(function(){ div.remove(); }, 800);
 }
 
-// 表情包
+// 表情包（观战者不参与，服务端也会拒绝）
+var emojiBar = document.querySelector('.emoji-bar');
+if (IS_WATCHER && emojiBar) emojiBar.style.display = 'none';
 document.querySelectorAll('.emoji-btn').forEach(function(b) {
   b.addEventListener('click', function() {
     var e = this.dataset.e;
@@ -1104,6 +1162,9 @@ socket.on('game_over', function(d) {
   var myScore = d.scores[MY_UID] || 0;
   var oppUid = d.challenger == MY_UID ? d.opponent : d.challenger;
   var oppScore = d.scores[oppUid] || 0;
+  // 发起方/应战方比分（观战与回放视角固定按车道顺序）
+  var cScore = d.scores[d.challenger] || 0;
+  var oScore = d.scores[d.opponent] || 0;
 
   // 胜者车冲过终点线 + 赛道彩带
   if (d.winner) cars[carSideOf(d.winner)].p = 1.0;
@@ -1121,6 +1182,20 @@ socket.on('game_over', function(d) {
   // 重置类，强制重排触发动画
   ov.className = ''; halo.className = 'vh-halo';
   void ov.offsetWidth;  // reflow
+
+  if (IS_WATCHER) {
+    /* ===== C14 观战者结算：只展示赛果，不参与再战 ===== */
+    ov.classList.add('show');
+    title.innerHTML = d.winner
+      ? '<span class="vh-normal">' + (d.winner === d.challenger ? NAME_C : NAME_O) + ' 获胜！</span>'
+      : '<span class="vh-normal">英雄相惜</span>';
+    sub.textContent = '🏁 ' + NAME_C + ' ' + cScore + ' : ' + oScore + ' ' + NAME_O;
+    scoreLine.innerHTML = '<span class="me">' + cScore + '</span> : <span>' + oScore + '</span>';
+    scoreDetail.textContent = '发起方 ' + cScore + ' 题 · 应战方 ' + oScore + ' 题';
+    document.getElementById('btn-rematch').style.display = 'none';
+    fxVictory();
+    return;
+  }
 
   if (d.winner === MY_UID) {
     /* ===== 胜利 ===== */
@@ -1162,6 +1237,22 @@ socket.on('game_over', function(d) {
 socket.on('opponent_left', function() {
   var b = document.getElementById('opp-banner');
   if (b) b.style.display = 'flex';
+});
+
+/* ---- C1 再战一局：双方确认后同题重洗开新局 ---- */
+var rematchBtn = document.getElementById('btn-rematch');
+rematchBtn.addEventListener('click', function () {
+  if (!confirm('邀请对方再战一局？（同题型配置、题目重新洗牌）')) return;
+  socket.emit('pk_rematch', {pid: PID});
+  rematchBtn.disabled = true;
+  rematchBtn.textContent = '等待对方接受…';
+});
+socket.on('rematch_wait', function (d) {
+  rematchBtn.textContent = '对方已同意（' + d.n + '/2）…';
+});
+socket.on('rematch_go', function (d) {
+  alert('双方都同意再战！即将进入新对局');
+  location.href = '/pk/' + d.pid;
 });
 
 // 静音开关

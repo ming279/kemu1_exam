@@ -5,6 +5,9 @@
 <div class="feedback {{ 'ok' if feedback.ok else 'bad' }}">
   {% if feedback.ok %}<span class="tag-ok">回答正确！</span>
   {% else %}<span class="tag-bad">回答错误</span> 你的答案：{{ feedback.user_answer }}｜正确答案：{{ feedback.correct }}{% endif %}
+  {% if not feedback.ok %}
+  <button class="btn small btn-ai" type="button" onclick="aiExplain({{ question.id }}, this)">🤖 AI 讲解</button>
+  {% endif %}
   {% if idx + 1 < total %}
     <a class="btn" href="{{ url_for('practice_page', idx=idx + 1) }}">下一题</a>
   {% else %}
@@ -14,11 +17,28 @@
 {% endif %}
 <div class="card q-card">
   <span class="qtype">{{ QTYPE_NAME[question.qtype] }}</span>
+  {% if reveal %}<span class="tag-ok">📖 背题模式</span>{% endif %}
+  <button class="btn small secondary" type="button" onclick="speakQuestion()" style="float:right;">🔊 读题</button>
   <b>{{ question.stem }}</b>
   {% for iid in question.images %}
     <img class="qimg" src="{{ url_for('image', iid=iid) }}" alt="题目配图">
   {% endfor %}
-  <form method="post" action="{{ url_for('practice_answer') }}">
+
+  {% if reveal %}
+  <!-- C7 背题模式：立即显示答案与解析，不记作答 -->
+  {% for o in question.options %}
+    <div class="opt {{ 'correct' if o.is_correct }}">{{ o.label }}、{{ o.content }}{% if o.is_correct %} <span class="tag-ok">（正确答案）</span>{% endif %}</div>
+  {% endfor %}
+  {% if question.explanation %}
+  <div class="explanation">{{ question.explanation }}</div>
+  {% endif %}
+  {% if idx + 1 < total %}
+    <a class="btn" href="{{ url_for('practice_page', idx=idx + 1) }}" style="margin-top:10px;">下一题（Enter）</a>
+  {% else %}
+    <a class="btn" href="{{ url_for('practice_summary') }}" style="margin-top:10px;">查看本轮小结（Enter）</a>
+  {% endif %}
+  {% else %}
+  <form method="post" action="{{ url_for('practice_answer') }}" id="practice-form">
     <input type="hidden" name="idx" value="{{ idx }}">
     {% for o in question.options %}
       <div class="opt">
@@ -32,7 +52,83 @@
         </label>
       </div>
     {% endfor %}
-    <button class="btn" type="submit">提交答案</button>
+    <button class="btn" type="submit">提交答案（Enter）</button>
   </form>
+  {% endif %}
+  <div id="ai-explain-slot"></div>
+  <button class="btn small btn-report" type="button" style="margin-top:12px;"
+          onclick="reportQuestion({{ question.id }})">⚠ 举报此题有误</button>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+var QID = {{ question.id }};
+var QTYPE = '{{ question.qtype }}';
+var NEXT_URL = '{% if idx + 1 < total %}{{ url_for("practice_page", idx=idx + 1) }}{% else %}{{ url_for("practice_summary") }}{% endif %}';
+
+/* C18 AI 通俗讲解 */
+function aiExplain(qid, btn) {
+  btn.disabled = true; btn.textContent = '🤖 生成中…';
+  fetch('/ai/explain/' + qid, { method: 'POST' })
+    .then(function (r) { return r.json(); })
+    .then(function (d) {
+      var slot = document.getElementById('ai-explain-slot');
+      if (d.ok) {
+        var div = document.createElement('div');
+        div.className = 'ai-explain-box';
+        div.textContent = '🤖 ' + d.explanation;
+        slot.appendChild(div);
+        btn.remove();
+      } else {
+        alert(d.msg); btn.disabled = false; btn.textContent = '🤖 AI 讲解';
+      }
+    }).catch(function () { btn.disabled = false; btn.textContent = '🤖 AI 讲解'; });
+}
+
+/* C20 纠错上报 */
+function reportQuestion(qid) {
+  var reason = prompt('请描述这道题的问题（如答案有误/题干歧义/配图错误）：');
+  if (reason === null) return;
+  fetch('/report/question/' + qid, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ reason: reason })
+  }).then(function (r) { return r.json(); })
+    .then(function (d) { alert(d.msg); });
+}
+
+/* C8 语音读题（Web Speech API） */
+function speakQuestion() {
+  if (!window.speechSynthesis) { alert('当前浏览器不支持语音朗读'); return; }
+  speechSynthesis.cancel();
+  var u = new SpeechSynthesisUtterance(document.querySelector('.q-card b').textContent);
+  u.lang = 'zh-CN'; u.rate = 0.95;
+  {% if not reveal %}
+  document.querySelectorAll('#practice-form .opt label').forEach(function (l) {
+    var t = l.textContent.trim();
+    if (t) { var u2 = new SpeechSynthesisUtterance(t); u2.lang = 'zh-CN'; speechSynthesis.speak(u2); }
+  });
+  {% endif %}
+  speechSynthesis.speak(u);
+}
+
+/* C6 键盘快捷键：A-D / 1-4 选选项，Enter 提交/下一题 */
+var KEYMAP = { '1': 0, '2': 1, '3': 2, '4': 3, 'a': 0, 'b': 1, 'c': 2, 'd': 3 };
+document.addEventListener('keydown', function (e) {
+  if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT') return;
+  {% if not feedback and not reveal %}
+  var inputs = document.querySelectorAll('#practice-form input[type=radio], #practice-form input[type=checkbox]');
+  var k = e.key.toLowerCase();
+  if (KEYMAP[k] !== undefined && inputs[KEYMAP[k]]) {
+    if (inputs[KEYMAP[k]].type === 'radio') inputs[KEYMAP[k]].checked = true;
+    else inputs[KEYMAP[k]].checked = !inputs[KEYMAP[k]].checked;
+  } else if (e.key === 'Enter') {
+    document.getElementById('practice-form').submit();
+  }
+  {% else %}
+  if (e.key === 'Enter') location.href = NEXT_URL;
+  {% endif %}
+});
+</script>
 {% endblock %}

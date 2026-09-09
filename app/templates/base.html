@@ -22,8 +22,10 @@
     <a href="{{ url_for('stats') }}">我的统计</a>
     <a href="{{ url_for('ranking') }}">排名</a>
     <a href="{{ url_for('pk_lobby') }}">PK挑战</a>
+    <a href="{{ url_for('notifications_page') }}" id="nav-bell" title="站内通知">🔔{% if notif_unread %}<span class="bell-dot">{{ notif_unread }}</span>{% endif %}</a>
     {% if cur_user.role == 'admin' %}<a href="{{ url_for('admin_users') }}">用户管理</a><a href="{{ url_for('admin_stats') }}">全局统计</a><a href="{{ url_for('admin_questions') }}">题目管理</a><a href="{{ url_for('admin_tasks') }}">任务管理</a><a href="{{ url_for('admin_wrong_rank') }}">错题排行</a><a href="{{ url_for('admin_answer_data') }}">答题数据</a><a href="{{ url_for('crawl_page') }}">题库采集</a><a href="{{ url_for('ai_page') }}">AI 验证</a>{% endif %}
-    <span class="muted">{{ cur_user.username }}（{{ '管理员' if cur_user.role == 'admin' else '考生' }}）</span>
+    <span class="muted">{% if study_streak %}<span class="streak-chip" title="连续学习天数">🔥{{ study_streak }}天</span>{% endif %}{{ cur_user.username }}（{{ '管理员' if cur_user.role == 'admin' else '考生' }}）</span>
+    <button class="linklike" id="btn-dark" title="深色模式">🌙</button>
     <a href="{{ url_for('logout') }}">退出</a>
   </div>
   {% endif %}
@@ -35,5 +37,22 @@
   {% block content %}{% endblock %}
 </div>
 {% block scripts %}{% endblock %}
+<script>
+/* C23 深色模式：localStorage 记忆，全站生效 */
+(function () {
+  var btn = document.getElementById('btn-dark');
+  if (!btn) return;
+  function apply(dark) {
+    document.body.classList.toggle('dark', dark);
+    btn.textContent = dark ? '☀️' : '🌙';
+  }
+  apply(localStorage.getItem('darkmode') === '1');
+  btn.addEventListener('click', function () {
+    var dark = !document.body.classList.contains('dark');
+    localStorage.setItem('darkmode', dark ? '1' : '0');
+    apply(dark);
+  });
+})();
+</script>
 </body>
 </html>

@@ -2,12 +2,25 @@
 {% block title %}题目管理{% endblock %}
 {% block content %}
 <h1>题目管理</h1>
-<p class="muted">共 {{ total }} 道题，每页 20 题。点击解析框可编辑，失焦自动保存。</p>
+<p class="muted">共 {{ total }} 道题，每页 20 题。点击解析框可编辑，失焦自动保存；支持题干关键词 / 题号 / 分类 / 题型组合筛选。</p>
 
-<form method="get" class="search-bar" style="margin: 1em 0;">
-  <input type="text" name="q" value="{{ search }}" placeholder="搜索题干关键词" class="search-input">
-  <button type="submit" class="btn">搜索</button>
-  {% if search %}<a href="{{ url_for('admin_questions') }}" class="btn">清除</a>{% endif %}
+<form method="get" class="search-bar" style="margin: 1em 0;flex-wrap:wrap;">
+  <input type="text" name="q" value="{{ search }}" placeholder="搜索题干关键词或题号" class="search-input">
+  <select name="qtype" style="width:120px;padding:6px;">
+    <option value="">全部题型</option>
+    <option value="judge" {{ 'selected' if qtype_f == 'judge' }}>判断题</option>
+    <option value="single" {{ 'selected' if qtype_f == 'single' }}>单选题</option>
+    <option value="multi" {{ 'selected' if qtype_f == 'multi' }}>多选题</option>
+  </select>
+  <select name="cat" style="width:220px;padding:6px;">
+    <option value="">全部分类</option>
+    <option value="0" {{ 'selected' if cat_f == '0' }}>未分类</option>
+    {% for c in cat_options %}
+    <option value="{{ c.id }}" {{ 'selected' if cat_f == c.id|string }}>{{ c.label }}</option>
+    {% endfor %}
+  </select>
+  <button type="submit" class="btn">筛选</button>
+  {% if search or qtype_f or cat_f %}<a href="{{ url_for('admin_questions') }}" class="btn secondary">清除</a>{% endif %}
 </form>
 
 <table>
@@ -26,14 +39,38 @@
 </table>
 
 <div class="pagination">
-  {% if page > 1 %}<a href="{{ url_for('admin_questions', page=page-1, q=search) }}">上一页</a>{% endif %}
-  <span>第 {{ page }} / {{ pages }} 页</span>
-  {% if page < pages %}<a href="{{ url_for('admin_questions', page=page+1, q=search) }}">下一页</a>{% endif %}
+  {% if page > 1 %}<a href="{{ url_for('admin_questions', page=page-1, q=search or none, qtype=qtype_f or none, cat=cat_f or none) }}">上一页</a>{% endif %}
+  <span>第 {{ page }} / {{ pages }} 页（共 {{ total }} 题）</span>
+  {% if page < pages %}<a href="{{ url_for('admin_questions', page=page+1, q=search or none, qtype=qtype_f or none, cat=cat_f or none) }}">下一页</a>{% endif %}
 </div>
+
+{% if reports %}
+<div class="card" style="border:1px solid #fdba74;background:#fffbeb;">
+  <h3>⚠ 待审核纠错上报（{{ reports|length }}）</h3>
+  <table>
+    <tr><th>题目ID</th><th>题干</th><th>举报人</th><th>原因</th><th>时间</th><th>操作</th></tr>
+    {% for r in reports %}
+    <tr>
+      <td><a href="{{ url_for('admin_questions', q=r.qid|string) }}">{{ r.qid }}</a></td>
+      <td>{{ r.stem_short }}…</td>
+      <td>{{ r.real_name or r.username }}</td>
+      <td>{{ r.reason }}</td>
+      <td class="muted">{{ r.created_at }}</td>
+      <td>
+        <form method="post" action="{{ url_for('admin_report_resolve', rid=r.id) }}" class="inline"
+              onsubmit="return confirm('已核对并处理该上报？')">
+          <button class="btn small" type="submit">✅ 标记处理</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  <p class="muted" style="margin-top:8px;">处理流程：点击题目ID定位 → 核对题目 → 在上方解析框修正答案/解析 → 标记处理完成。</p>
+</div>
+{% endif %}
 
 <script>
 document.querySelectorAll('.explanation-input').forEach(function(ta) {
-  var saveTimer = null;
   ta.addEventListener('blur', function() {
     var qid = this.dataset.qid;
     var val = this.value.trim();

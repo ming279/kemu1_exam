@@ -33,11 +33,18 @@
 <div class="card">
   <h3>选择对手发起挑战</h3>
   <p class="muted">选择一名同学发起 10 题竞速 PK，同题同步、抢答得分（答错送对方 1 分），小车冲线决胜负！</p>
-  <div style="display:flex;gap:16px;align-items:center;margin-bottom:10px;background:#f8fafc;border:1px solid #e5e7eb;border-radius:8px;padding:8px 12px;">
+  <div style="display:flex;gap:16px;align-items:center;margin-bottom:10px;background:#f8fafc;border:1px solid #e5e7eb;border-radius:8px;padding:8px 12px;flex-wrap:wrap;">
     <b style="font-size:14px;">题型配置：</b>
     <label style="font-size:14px;">判断题 <input type="number" id="n-judge" value="5" min="0" max="10" style="width:56px;"></label>
     <label style="font-size:14px;">单选题 <input type="number" id="n-single" value="5" min="0" max="10" style="width:56px;"></label>
     <span id="type-sum" class="muted" style="font-size:13px;">合计 10 ✓</span>
+    <b style="font-size:14px;margin-left:8px;">🏁 赛道皮肤：</b>
+    <select id="n-theme" style="width:150px;">
+      <option value="day">☀️ 白昼赛道</option>
+      <option value="night">🌃 夜间霓虹</option>
+      <option value="rain">🌧️ 雨天湿滑</option>
+      <option value="desert">🏜️ 沙漠公路</option>
+    </select>
   </div>
   {% if not students %}
   <p class="muted">暂无可挑战的同学（需要其他学生注册）。</p>
@@ -72,12 +79,22 @@
 </div>
 
 <div class="card">
+  <h3>🔑 房间码快速加入</h3>
+  <p class="muted">向对局双方索要 6 位房间码，输入即可进入对局；非本局玩家自动转为<b>观战</b>。</p>
+  <form method="post" action="{{ url_for('pk_join_code') }}" style="display:flex;gap:10px;align-items:center;">
+    <input type="text" name="code" placeholder="6 位房间码" maxlength="6" required
+           style="width:140px;letter-spacing:4px;font-size:18px;font-weight:700;text-align:center;">
+    <button class="btn" type="submit">加入 / 观战</button>
+  </form>
+</div>
+
+<div class="card">
   <h3>最近对战记录</h3>
   {% if not records %}
   <p class="muted">暂无对战记录，快去发起挑战吧！</p>
   {% else %}
   <table>
-    <tr><th>对战</th><th>比分</th><th>结果</th><th>时间</th></tr>
+    <tr><th>对战</th><th>比分</th><th>结果</th><th>回放</th><th>时间</th></tr>
     {% for r in records %}
     <tr>
       <td>{{ r.c_name }} VS {{ r.o_name }}</td>
@@ -86,6 +103,11 @@
         {% if r.winner_uid == me.id %}<span class="tag-ok">胜利 🎉</span>
         {% elif r.winner_uid %}<span class="tag-bad">惜败</span>
         {% else %}<span class="muted">平局</span>{% endif %}
+      </td>
+      <td>
+        {% if r.status == 'finished' %}
+        <a class="btn small secondary" href="{{ url_for('pk_replay', pid=r.id) }}">▶ 回放</a>
+        {% else %}<span class="muted">—</span>{% endif %}
       </td>
       <td>{{ r.finished_at or r.created_at }}</td>
     </tr>
@@ -146,6 +168,7 @@ function challengeConfirm(btn, uname) {
   var form = btn.closest('form');
   form.querySelector('.f-judge').value = parseInt(nJudge.value) || 0;
   form.querySelector('.f-single').value = parseInt(nSingle.value) || 0;
+  form.querySelector('.f-theme').value = document.getElementById('n-theme').value;
   return confirm('向 ' + uname + ' 发起 PK 挑战？（判断题 ' + nJudge.value + ' + 单选题 ' + nSingle.value + '）');
 }
 </script>

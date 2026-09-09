@@ -88,3 +88,74 @@ html { scroll-behavior:smooth; }
 .practice-timer { margin:12px 0; padding:10px; background:#f0f7ff; border:1px solid #bfdbfe; border-radius:8px; text-align:center; }
 .practice-timer .countdown-num { color:var(--brand); }
 .practice-controls { margin-top:6px; display:flex; gap:6px; justify-content:center; }
+
+/* ---- C13 连续打卡 / C22 通知红点 ---- */
+.streak-chip { background:rgba(255,255,255,.18); border-radius:10px; padding:1px 8px; margin-right:6px; font-size:13px; }
+#nav-bell { position:relative; }
+.bell-dot { position:absolute; top:-8px; right:-12px; background:#ef4444; color:#fff; border-radius:8px;
+  font-size:11px; min-width:16px; height:16px; line-height:16px; text-align:center; padding:0 3px; }
+.noti-item { display:flex; align-items:center; gap:12px; padding:10px 4px; border-bottom:1px dashed var(--line); }
+.noti-item .noti-time { color:#6b7280; font-size:13px; white-space:nowrap; }
+.noti-item .noti-content { flex:1; }
+
+/* ---- C5 题目标记 / C2 切屏提示 ---- */
+.ac-cell.marked { background:#ffedd5; }
+.ac-cell.marked .ac-dot { background:#f97316; border-color:#f97316; }
+.q-mark-btn { position:absolute; right:0; top:-4px; font-size:18px; background:none; border:none; cursor:pointer; opacity:.35; }
+.q-mark-btn.on { opacity:1; }
+.q-block { position:relative; }
+.switch-warn { background:#fff7ed; border:1px solid #fdba74; color:#9a3412; border-radius:8px; padding:6px 10px; margin:8px 0; font-size:13px; }
+
+/* ---- C12 成就徽章墙 ---- */
+.ach-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; }
+.ach-item { text-align:center; padding:14px 6px; border:1px solid var(--line); border-radius:10px; background:var(--card); }
+.ach-item .ach-ico { font-size:34px; }
+.ach-item .ach-name { font-weight:700; margin-top:6px; }
+.ach-item .ach-desc { font-size:12px; color:#6b7280; margin-top:2px; }
+.ach-item.locked { opacity:.35; filter:grayscale(1); }
+@media (max-width:800px) { .ach-grid { grid-template-columns:repeat(2,1fr); } }
+
+/* ---- C18 AI 讲解 / C20 纠错 ---- */
+.ai-explain-box { margin-top:8px; padding:8px 12px; background:linear-gradient(135deg,#eef2ff,#fdf4ff);
+  border-left:3px solid #8b5cf6; border-radius:6px; font-size:14px; line-height:1.7; white-space:pre-wrap; }
+.btn-ai { background:#8b5cf6; }
+.btn-report { background:#f59e0b; }
+.sim-list { margin:6px 0 0; padding-left:18px; font-size:13px; color:#4b5563; }
+.sim-list li { margin:2px 0; }
+
+/* ---- C15 对局回放 ---- */
+.replay-stage { min-height:220px; }
+.replay-answers { display:flex; gap:16px; margin-top:12px; flex-wrap:wrap; }
+.replay-chip { padding:6px 14px; border-radius:20px; font-size:14px; font-weight:600; color:#fff; }
+.replay-chip.c { background:#ef4444; } .replay-chip.o { background:#3b82f6; }
+.replay-chip.none { background:#9ca3af; }
+
+/* ---- C23 深色模式（CSS 变量覆盖） ---- */
+body.dark { --bg:#0f172a; --card:#1e293b; --line:#334155; color:#e2e8f0; }
+body.dark .card { border-color:var(--line); }
+body.dark .muted { color:#94a3b8; }
+body.dark th { background:#0f172a; color:#e2e8f0; }
+body.dark th, body.dark td { border-bottom-color:var(--line); }
+body.dark .qnum { color:#e2e8f0; }
+body.dark .opt.correct { color:#4ade80; }
+body.dark .opt.wrong { color:#f87171; }
+body.dark .opt-btn { background:var(--card); color:#e2e8f0; border-color:var(--line); }
+body.dark .opt-btn:hover:not(:disabled) { background:#0f172a; border-color:var(--brand); }
+body.dark .opt-btn.correct { background:#14532d; color:#bbf7d0; }
+body.dark .opt-btn.wrong { background:#7f1d1d; color:#fecaca; }
+body.dark .ac-cell { color:#cbd5e1; }
+body.dark .ac-cell:hover { background:#1e3a5f; }
+body.dark .ac-section-title { color:#94a3b8; }
+body.dark .section-head { background:#312e81; color:#c7d2fe; }
+body.dark .qtype { background:#312e81; color:#c7d2fe; }
+body.dark .countdown-box { background:#450a0a; border-color:#7f1d1d; }
+body.dark .practice-timer { background:#172554; border-color:#1e40af; }
+body.dark .feedback.ok { background:#14532d; color:#bbf7d0; }
+body.dark .feedback.bad { background:#7f1d1d; color:#fecaca; }
+body.dark .flash.success { background:#14532d; color:#bbf7d0; }
+body.dark .flash.danger { background:#7f1d1d; color:#fecaca; }
+body.dark .explanation { background:#172554; color:#bfdbfe; }
+body.dark .switch-warn { background:#431407; border-color:#9a3412; color:#fdba74; }
+body.dark .ai-explain-box { background:#2e1065; color:#ddd6fe; }
+body.dark .search-input, body.dark .explanation-input { background:var(--card); color:#e2e8f0; border-color:var(--line); }
+body.dark .replay-chip.none { background:#475569; }

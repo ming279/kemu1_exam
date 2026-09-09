@@ -22,9 +22,63 @@
   {% for o in q.options %}
     <div class="opt {{ 'correct' if o.is_correct }}">{{ o.label }}、{{ o.content }}{% if o.is_correct %} <span class="tag-ok">（正确答案）</span>{% endif %}</div>
   {% endfor %}
-  <form method="post" action="{{ url_for('wrongbook_master', qid=q.id) }}">
-    <button class="btn secondary" type="submit">标记已掌握</button>
-  </form>
+  {% if q.explanation %}
+  <div class="explanation">{{ q.explanation }}</div>
+  {% endif %}
+  <div class="ai-slot" id="ai-slot-{{ q.id }}"></div>
+  <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;">
+    <form method="post" action="{{ url_for('wrongbook_master', qid=q.id) }}" class="inline">
+      <button class="btn secondary small" type="submit">✅ 标记已掌握</button>
+    </form>
+    <button class="btn small btn-ai" type="button"
+            onclick="aiExplain({{ q.id }}, this)">🤖 AI 讲解</button>
+    <button class="btn small btn-report" type="button"
+            onclick="reportQuestion({{ q.id }})">⚠ 举报有误</button>
+  </div>
+  {% if sim_map.get(q.id) %}
+  <div style="margin-top:10px;background:#f8fafc;border:1px solid var(--line);border-radius:8px;padding:8px 12px;">
+    <b style="font-size:13px;">🎯 再练 3 道相似题</b>
+    <ul class="sim-list">
+      {% for s in sim_map[q.id] %}
+      <li>{{ s.stem }}{% if s.sim %} <span class="muted">（相似度 {{ (s.sim * 100) | round(0) | int }}%）</span>{% endif %}</li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
 </div>
 {% endfor %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+/* C18 AI 通俗讲解：优先返回缓存解析，否则调 LLM 生成 */
+function aiExplain(qid, btn) {
+  btn.disabled = true; btn.textContent = '🤖 生成中…';
+  fetch('/ai/explain/' + qid, { method: 'POST' })
+    .then(function (r) { return r.json(); })
+    .then(function (d) {
+      if (d.ok) {
+        var div = document.createElement('div');
+        div.className = 'ai-explain-box';
+        div.textContent = '🤖 ' + d.explanation;
+        document.getElementById('ai-slot-' + qid).appendChild(div);
+        btn.remove();
+      } else {
+        alert(d.msg); btn.disabled = false; btn.textContent = '🤖 AI 讲解';
+      }
+    }).catch(function () { btn.disabled = false; btn.textContent = '🤖 AI 讲解'; });
+}
+
+/* C20 纠错上报 */
+function reportQuestion(qid) {
+  var reason = prompt('请描述这道题的问题（如答案有误/题干歧义/配图错误）：');
+  if (reason === null) return;
+  fetch('/report/question/' + qid, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ reason: reason })
+  }).then(function (r) { return r.json(); })
+    .then(function (d) { alert(d.msg); });
+}
+</script>
 {% endblock %}

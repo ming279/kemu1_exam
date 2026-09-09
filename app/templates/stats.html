@@ -8,6 +8,49 @@
   <div><div class="num">{{ psum.total }}</div>累计考试场次</div>
 </div>
 
+<div class="chart-grid" style="grid-template-columns:1fr 2fr;">
+  <!-- C10 过考概率仪表盘 -->
+  <div class="card chart-card">
+    <h3>🎯 过考概率</h3>
+    {% if prob %}
+    <div id="chart-prob" style="height:260px;"></div>
+    <p style="text-align:center;font-weight:600;margin:0;">{{ prob.text }}<br>
+      <span class="muted">最近 5 场均分 {{ prob.avg5 }}（90 分及格）</span></p>
+    {% else %}
+    <p class="muted" style="text-align:center;line-height:220px;">先完成一场模拟考试，解锁过考预测</p>
+    {% endif %}
+  </div>
+  <!-- C9 能力雷达图 -->
+  <div class="card chart-card">
+    <h3>🕸️ 能力雷达（各分类练习正确率）</h3>
+    {% if radar_names %}
+    <div id="chart-radar" style="height:260px;"></div>
+    {% else %}
+    <p class="muted" style="text-align:center;line-height:220px;">先去练习几道题，生成你的能力画像</p>
+    {% endif %}
+  </div>
+</div>
+
+<!-- C11 学习热力图（近 12 周每天作答量） -->
+<div class="card chart-card">
+  <h3>🔥 学习热力图（近 12 周打卡）</h3>
+  <div id="chart-heat" style="height:180px;"></div>
+</div>
+
+<!-- C12 成就徽章墙 -->
+<div class="card">
+  <h3>🏅 成就墙（{{ achievements | selectattr('3') | list | length }} / {{ achievements|length }}）</h3>
+  <div class="ach-grid">
+    {% for a in achievements %}
+    <div class="ach-item {{ 'locked' if not a[3] }}" title="{{ a[2] }}">
+      <div class="ach-ico">{{ a[0] }}</div>
+      <div class="ach-name">{{ a[1] }}</div>
+      <div class="ach-desc">{{ a[2] }}</div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+
 <div class="chart-grid">
   <div class="card chart-card">
     <h3>我的练习正确率</h3>
@@ -73,6 +116,10 @@
 <script>
 (function(){
   var myAcc = {{ me.accuracy or 0 }};
+  var prob = {{ prob|tojson if prob else 'null' }};
+  var radarNames = {{ radar_names|tojson }};
+  var radarValues = {{ radar_values|tojson }};
+  var heatList = {{ heat_list|tojson }};
   var finishedPapers = [
     {% for p in papers %}{% if p.status == 'finished' and p.score is not none %}
     {score:{{ p.score }}},
@@ -86,6 +133,61 @@
     {% endfor %}
   ].reverse();
   var charts = [];
+
+  // 0. C10 过考概率仪表盘
+  var elProb = document.getElementById('chart-prob');
+  if (elProb && prob) {
+    var c0 = echarts.init(elProb); charts.push(c0);
+    c0.setOption({
+      series:[{
+        type:'gauge', startAngle:210, endAngle:-30, min:0, max:100,
+        progress:{show:true, width:16, itemStyle:{color: prob.p>=85?'#16a34a':(prob.p>=50?'#f59e0b':'#dc2626')}},
+        axisLine:{lineStyle:{width:16, color:[[1,'#e5e7eb']]}},
+        axisTick:{show:false}, splitLine:{length:10, lineStyle:{color:'#999'}},
+        axisLabel:{distance:22, fontSize:10},
+        pointer:{width:4}, detail:{formatter:'{value}%', fontSize:30, offsetCenter:[0,'68%'], color:'#1f2937'},
+        data:[{value:prob.p}]
+      }]
+    });
+  }
+
+  // 0.5 C9 能力雷达图
+  var elRadar = document.getElementById('chart-radar');
+  if (elRadar && radarNames.length) {
+    var cR = echarts.init(elRadar); charts.push(cR);
+    cR.setOption({
+      tooltip:{},
+      radar:{ indicator: radarNames.map(function(n){ return {name:n, max:100}; }),
+              radius:'65%' },
+      series:[{
+        type:'radar',
+        data:[{ value: radarValues, name:'练习正确率%',
+                areaStyle:{color:'rgba(37,99,235,0.25)'},
+                lineStyle:{color:'#2563eb', width:2},
+                itemStyle:{color:'#2563eb'} }]
+      }]
+    });
+  }
+
+  // 0.6 C11 学习热力图（GitHub 打卡风格：7 行 × 12 周）
+  var elHeat = document.getElementById('chart-heat');
+  if (elHeat) {
+    var maxCnt = Math.max.apply(null, heatList.map(function(d){ return d[1]; }).concat([1]));
+    var cH = echarts.init(elHeat); charts.push(cH);
+    cH.setOption({
+      tooltip:{ formatter:function(p){ return p.value[0] + '<br>作答 ' + p.value[1] + ' 题'; } },
+      visualMap:{ show:false, min:0, max:maxCnt, inRange:{color:['#ebedf0','#9be9a8','#40c463','#216e39']} },
+      calendar:{ cellSize:[13,13], range:(function(){
+          var a = heatList[0][0].split('-'), b = heatList[heatList.length-1][0].split('-');
+          return [a.join('-'), b.join('-')];
+        })(),
+        orient:'horizontal', itemStyle:{color:'#fff', borderColor:'#e5e7eb', borderWidth:1},
+        yearLabel:{show:false}, monthLabel:{fontSize:10},
+        dayLabel:{names:['日','一','二','三','四','五','六'], fontSize:10} },
+      series:[{ type:'heatmap', coordinateSystem:'calendar',
+        data: heatList.map(function(d){ return [d[0], d[1]]; }) }]
+    });
+  }
 
   // 1. 练习正确率仪表盘
   var c1 = echarts.init(document.getElementById('chart-myacc'));
