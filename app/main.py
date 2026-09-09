@@ -263,7 +263,16 @@ def my_tasks_page():
 @app.route('/exam/start', methods=['POST'])
 @login_required
 def exam_start():
-    """随机组卷：判断题 1-40 在前，单选题 41-100 在后（按题型分区展示）"""
+    """随机组卷：判断题 1-40 在前，单选题 41-100 在后（按题型分区展示）。
+    已有进行中的自由模拟考时直接恢复，防止误点导航新建试卷丢失作答。"""
+    existing = q(
+        "SELECT id FROM exam_paper WHERE user_id=%s AND task_id IS NULL "
+        "AND status='in_progress' ORDER BY id DESC LIMIT 1",
+        (session['uid'],), one=True)
+    if existing:
+        flash('已恢复你上次未完成的模拟考试（作答内容自动保存）', 'info')
+        return redirect(url_for('exam_page', pid=existing['id']))
+
     judges = [r['id'] for r in
               q(f"SELECT id FROM question WHERE qtype='judge' "
                 f"ORDER BY RAND() LIMIT {EXAM_JUDGE_COUNT}")]
