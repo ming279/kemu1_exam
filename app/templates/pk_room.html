@@ -1039,9 +1039,10 @@ socket.on('go', function() {
   }
 });
 
-// 下一题
-socket.on('next_question', function(d) {
-  myAnswered = false;
+// 下一题 / 观战补发同步：渲染题干、选项、倒计时
+// watchOnly=true 时选项只读不可点（观战者）
+function renderQuestion(d, remainSec, watchOnly) {
+  myAnswered = !!watchOnly;
   document.getElementById('q-idx').textContent = d.idx + 1;
   var stemEl = document.getElementById('q-stem');
   stemEl.textContent = d.stem;
@@ -1065,13 +1066,15 @@ socket.on('next_question', function(d) {
     var btn = document.createElement('button');
     btn.className = 'opt-btn';
     btn.textContent = o.label + '、' + o.content;
-    btn.onclick = function() { submitAnswer(d.idx, o.label, btn); };
+    if (watchOnly) { btn.disabled = true; btn.classList.add('locked'); }
+    else btn.onclick = function() { submitAnswer(d.idx, o.label, btn); };
     box.appendChild(btn);
   });
   setScores(d.scores);
   // 倒计时（DOM 数字 + canvas 环形共用 race.remainSec）
-  race.remainTotal = Q_TIME;
-  race.remainSec = Q_TIME;
+  var total = d.q_time || Q_TIME;
+  race.remainTotal = total;
+  race.remainSec = remainSec;
   var timerEl = document.getElementById('q-timer');
   timerEl.textContent = race.remainSec;
   timerEl.className = 'q-timer';
@@ -1084,6 +1087,51 @@ socket.on('next_question', function(d) {
     if (race.remainSec <= 5 && race.remainSec > 0) SFX.tick();
     if (race.remainSec <= 0) clearInterval(timerHandle);
   }, 1000);
+}
+
+// 观战者中途进入：后端补发当前题/比分/剩余时间/双方已选答案
+socket.on('watch_sync', function(d) {
+  document.getElementById('ready-panel').style.display = 'none';
+  document.getElementById('play-panel').style.display = 'block';
+  document.getElementById('btn-concede').style.display = 'none';
+  // 观战者退出按钮直接回大厅（不走玩家的判负确认）
+  var ep = document.getElementById('btn-exit-play');
+  var nep = ep.cloneNode(true);
+  nep.addEventListener('click', function () { location.href = '/pk'; });
+  ep.parentNode.replaceChild(nep, ep);
+  race.started = true; race.lightsN = 0; race.greenT = 0;   // 赛车直接进入行驶态
+  renderQuestion(d, d.remain, true);
+  setTargets(d.scores);   // 双车按当前比分就位
+  // 标注双方本题已选答案（◀ 红车/蓝车），答对者选项标绿
+  var btns = document.querySelectorAll('.opt-btn');
+  Object.keys(d.answers || {}).forEach(function(uid) {
+    var label = d.answers[uid], side = carSideOf(parseInt(uid));
+    var name = side === 'c' ? NAME_C : NAME_O;
+    btns.forEach(function(b) {
+      if (b.textContent.charAt(0) === label) {
+        b.innerHTML += ' <span style="color:' + (side === 'c' ? '#ef4444' : '#3b82f6') +
+          ';font-weight:700;">◀ ' + name + '</span>';
+      }
+    });
+  });
+  (d.answered || []).forEach(function(uid) {
+    var label = (d.answers || {})[uid];
+    btns.forEach(function(b) { if (label && b.textContent.charAt(0) === label) b.classList.add('correct'); });
+  });
+});
+
+// 观战者进入已结束的对局：提示并引导看回放
+socket.on('watch_finished', function() {
+  document.getElementById('ready-status').innerHTML = '🏁 本局对局已结束，可观看完整回放';
+  var rb = document.getElementById('btn-ready');
+  rb.textContent = '📺 观看回放';
+  rb.style.background = '#8b5cf6';
+  rb.onclick = function() { location.href = '/pk/' + PID + '/replay'; };
+});
+
+// 下一题
+socket.on('next_question', function(d) {
+  renderQuestion(d, d.q_time || Q_TIME, IS_WATCHER);
 });
 
 function submitAnswer(idx, label, btn) {

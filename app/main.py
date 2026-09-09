@@ -12,6 +12,7 @@ main.py - 驾照科目一题库管理与模拟考试系统（B/S 架构，Flask�
 """
 import os
 import re
+import time
 import random
 import hashlib
 import secrets
@@ -2334,11 +2335,7 @@ def pk_replay(pid):
     if rec['status'] != 'finished':
         flash('该对局尚未结束，无法回放', 'warning')
         return redirect(url_for('pk_lobby'))
-    me = current_user()
-    if session['uid'] not in (rec['challenger_uid'], rec['opponent_uid']) \
-            and (not me or me['role'] != 'admin'):
-        flash('仅对局双方可回放', 'danger')
-        return redirect(url_for('pk_lobby'))
+    # 回放为对局结束后的只读内容，所有登录用户均可观看（与观战权限一致）
     qids = [int(x) for x in rec['question_ids'].split(',')]
     questions = load_questions(qids)
     qa = rec['challenger_answers'] or ''
@@ -2465,6 +2462,25 @@ def watch_join(data):
     ]
     emit('room_state', {'players': players, 'status': room['status']})
 
+    # 对局进行中：补发当前题/比分/剩余时间/双方已选答案，观战者即时同步
+    if room['status'] == 'playing' and room.get('current_q', -1) >= 0:
+        idx = room['current_q']
+        qq = load_questions([room['questions'][idx]])[0]
+        remain = max(0, round(room.get('q_deadline', time.time()) - time.time()))
+        ans = room.get('answers', {}).get(idx, {}) or {}
+        emit('watch_sync', {
+            'idx': idx, 'total': PK_QUESTION_COUNT,
+            'stem': qq['stem'], 'images': qq.get('images', []),
+            'options': [{'label': o['label'], 'content': o['content']}
+                        for o in qq['options']],
+            'q_time': PK_Q_TIME, 'remain': remain,
+            'scores': {str(k): v for k, v in room['scores'].items()},
+            'answers': {str(k): v for k, v in ans.items()},
+            'answered': [u for u in room.get('answered', {}).get(idx, set())],
+        })
+    elif room['status'] == 'finished':
+        emit('watch_finished', {'pid': pid})
+
 
 @socketio.on('pk_ready')
 def pk_ready(data):
@@ -2518,6 +2534,7 @@ def _pk_next_question(key, room):
     room['answers'][idx] = {}
     room['answered'][idx] = set()
     room['locked_q'] = -1
+    room['q_deadline'] = time.time() + PK_Q_TIME   # 观战者中途进入时补发剩余秒数
     emit('next_question', payload, room=key)
 
     # 每题倒计时；有人答对锁定后提前进入下一题
@@ -2569,6 +2586,7 @@ def pk_answer(data):
         # 答对：得分，锁定该题（对方不能再答）
         room['scores'][uid] += 1
         room['answered'][idx].add(uid)
+        room['answers'].setdefault(idx, {})[uid] = answer
         room['locked_q'] = idx   # 通知定时器提前推进
         emit('answer_result', {
             'uid': uid, 'correct': True, 'answer': answer,
