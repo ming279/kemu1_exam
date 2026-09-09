@@ -59,14 +59,14 @@
       <h3 class="section-head">第一部分 · 判断题（{{ judges|length }} 题）</h3>
       {% for q in judges %}
       <div id="q-{{ q.seq }}" data-qseq="{{ q.seq }}">
-        {{ render_question(q, interactive=True, num=q.seq) }}
+        {{ render_question(q, interactive=True, num=q.seq, user_labels=q.user_answer) }}
       </div>
       {% endfor %}
 
       <h3 class="section-head">第二部分 · 选择题（{{ singles|length }} 题）</h3>
       {% for q in singles %}
       <div id="q-{{ q.seq }}" data-qseq="{{ q.seq }}">
-        {{ render_question(q, interactive=True, num=q.seq) }}
+        {{ render_question(q, interactive=True, num=q.seq, user_labels=q.user_answer) }}
       </div>
       {% endfor %}
       <button class="btn" type="submit" onclick="return confirm('确认交卷？')">交卷</button>
@@ -100,6 +100,7 @@
     var any = document.querySelector('input[name="' + inp.name.replace(/"/g, '\\"') + '"]:checked');
     markAnswered(inp, !!any);
     refreshCount();
+    saveAnswers();
   });
 
   document.querySelectorAll('input[type=radio]:checked, input[type=checkbox]:checked')

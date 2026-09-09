@@ -11,9 +11,9 @@
       <label>
         {% if interactive %}
           {% if q.qtype == 'multi' %}
-            <input type="checkbox" name="{{ name_prefix }}q_{{ q.id }}" value="{{ o.label }}">
+            <input type="checkbox" name="{{ name_prefix }}q_{{ q.id }}" value="{{ o.label }}" {{ 'checked' if user_labels and o.label in user_labels else '' }}>
           {% else %}
-            <input type="radio" name="{{ name_prefix }}q_{{ q.id }}" value="{{ o.label }}">
+            <input type="radio" name="{{ name_prefix }}q_{{ q.id }}" value="{{ o.label }}" {{ 'checked' if user_labels and o.label in user_labels else '' }}>
           {% endif %}
         {% endif %}
         {{ o.label }}、{{ o.content }}
