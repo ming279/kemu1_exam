@@ -256,7 +256,7 @@
   <div class="vh-card" id="vh-card">
     <div class="vh-score" id="vh-score"><span class="me">0</span> : <span>0</span></div>
     <div class="vh-detail" id="vh-detail">你答对 0 题，对手答对 0 题</div>
-    <button class="btn" id="btn-rematch" style="margin-right:10px;">🔄 再战一局</button>
+    <button class="btn" id="btn-rematch" style="margin-right:10px;">🔄 换题再战</button>
     <a href="{{ url_for('pk_lobby') }}" class="btn secondary">返回大厅</a>
   </div>
 </div>
@@ -1321,10 +1321,10 @@ socket.on('opponent_left', function() {
   if (b) b.style.display = 'flex';
 });
 
-/* ---- C1 再战一局：双方确认后同题重洗开新局 ---- */
+/* ---- C1 再战一局：双方确认后按相同题型配置换新题开新局 ---- */
 var rematchBtn = document.getElementById('btn-rematch');
 rematchBtn.addEventListener('click', function () {
-  if (!confirm('邀请对方再战一局？（同题型配置、题目重新洗牌）')) return;
+  if (!confirm('邀请对方换题再战？（题型配置、赛道不变，10 道题全部更新）')) return;
   socket.emit('pk_rematch', {pid: PID});
   rematchBtn.disabled = true;
   rematchBtn.textContent = '等待对方接受…';
@@ -1333,7 +1333,7 @@ socket.on('rematch_wait', function (d) {
   rematchBtn.textContent = '对方已同意（' + d.n + '/2）…';
 });
 socket.on('rematch_go', function (d) {
-  alert('双方都同意再战！即将进入新对局');
+  alert('双方都同意再战！新题目已生成，即将进入新对局');
   location.href = '/pk/' + d.pid;
 });
 
