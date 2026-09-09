@@ -18,6 +18,7 @@
     <a href="{{ url_for('practice_home') }}">练习</a>
     {% if cur_user.role == 'student' %}<a href="{{ url_for('my_tasks_page') }}">我的任务</a>{% endif %}
     <a href="{{ url_for('wrongbook') }}">错题本</a>
+    {% if cur_user.role == 'student' %}<a href="{{ url_for('my_papers') }}">考试记录</a>{% endif %}
     <a href="{{ url_for('stats') }}">我的统计</a>
     <a href="{{ url_for('ranking') }}">排名</a>
     <a href="{{ url_for('pk_lobby') }}">PK挑战</a>

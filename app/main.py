@@ -610,11 +610,19 @@ def wrongbook_clear():
 def stats():
     me = q("SELECT * FROM v_user_stat WHERE user_id=%s",
            (session['uid'],), one=True)
+    # 全部试卷（成绩走势图与概览统计用；明细列表在 /my-papers 页）
     my_papers = q("SELECT p.id, p.total_count, p.score, p.status, "
                   "p.started_at, p.submitted_at, t.title AS task_title "
                   "FROM exam_paper p LEFT JOIN task t ON t.id = p.task_id "
-                  "WHERE p.user_id=%s ORDER BY p.id DESC LIMIT 10",
+                  "WHERE p.user_id=%s ORDER BY p.id DESC",
                   (session['uid'],))
+    done = [p for p in my_papers if p['status'] == 'finished' and p['score'] is not None]
+    paper_summary = {
+        'total': len(my_papers),
+        'done': len(done),
+        'ongoing': len(my_papers) - len(done),
+        'avg': round(sum(p['score'] for p in done) / len(done), 1) if done else None,
+    }
     # 我的易错题 TOP10（按错误次数）
     my_weak = q(
         "SELECT q.id, q.stem, wb.wrong_count FROM wrong_book wb "
@@ -622,7 +630,7 @@ def stats():
         "WHERE wb.user_id=%s ORDER BY wb.wrong_count DESC LIMIT 10",
         (session['uid'],))
     return render_template('stats.html', me=me, papers=my_papers,
-                           sources=_paper_sources(my_papers), weak=my_weak)
+                           psum=paper_summary, weak=my_weak)
 
 
 def _paper_sources(papers):
