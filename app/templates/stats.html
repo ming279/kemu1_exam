@@ -5,7 +5,7 @@
   <div><div class="num">{{ me.total_answered or 0 }}</div>累计练习作答</div>
   <div><div class="num">{{ me.accuracy or 0 }}%</div>练习正确率</div>
   <div><div class="num">{{ me.wrong_active or 0 }}</div>未掌握错题</div>
-  <div><div class="num">{{ papers|length }}</div>最近考试场次</div>
+  <div><div class="num">{{ psum.total }}</div>累计考试场次</div>
 </div>
 
 <div class="chart-grid">
@@ -44,44 +44,20 @@
 </div>
 
 <div class="card">
-  <h3>最近考试记录<a class="btn small secondary" href="{{ url_for('my_papers') }}" style="float:right;">查看全部</a></h3>
-  {% if papers %}
-  <div class="src-tabs" style="display:flex;flex-wrap:wrap;gap:8px;margin:12px 0;">
-    <button type="button" class="btn small src-tab active" data-src="__ALL__">全部（{{ papers|length }}）</button>
-    {% for name, cnt in sources %}
-    <button type="button" class="btn small src-tab" data-src="{{ name }}">{{ name }}（{{ cnt }}）</button>
-    {% endfor %}
+  <h3>我的考试
+    <a class="btn small" href="{{ url_for('my_papers') }}" style="float:right;">进入考试记录 →</a>
+  </h3>
+  <div class="grid" style="grid-template-columns:repeat(4,1fr); margin:8px 0 4px;">
+    <div><div class="num">{{ psum.total }}</div>总场次</div>
+    <div><div class="num tag-ok">{{ psum.done }}</div>已完成</div>
+    <div><div class="num" style="color:#f59e0b;">{{ psum.ongoing }}</div>进行中</div>
+    <div><div class="num">{{ psum.avg if psum.avg is not none else '—' }}</div>平均分</div>
   </div>
-  {% endif %}
-  <table>
-    <tr><th>开考时间</th><th>来源</th><th>题数</th><th>得分</th><th>状态</th><th>提交时间</th><th></th></tr>
-    {% for p in papers %}
-    <tr class="paper-row" data-cat="{{ '任务' if p.task_title else '模拟考试' }}">
-      <td>{{ p.started_at or '—' }}</td>
-      <td>{{ p.task_title or '模拟考试' }}</td>
-      <td>{{ p.total_count }}</td>
-      <td>{{ p.score if p.status == 'finished' else '—' }}</td>
-      <td>{{ '已完成' if p.status == 'finished' else '进行中' }}</td>
-      <td>{{ p.submitted_at or '—' }}</td>
-      <td>{% if p.status == 'finished' %}<a href="{{ url_for('exam_result', pid=p.id) }}">查看成绩单</a>{% else %}<a href="{{ url_for('exam_page', pid=p.id) }}">继续作答 / 交卷</a>{% endif %}</td>
-    </tr>
-    {% else %}<tr><td colspan="7" class="muted">暂无考试记录</td></tr>{% endfor %}
-  </table>
+  <p class="muted" style="margin-top:10px;">
+    全部试卷（成绩单、解析、继续作答）请在
+    <a href="{{ url_for('my_papers') }}">我的考试记录</a> 页查看，支持按「模拟考试 / 任务」筛选。
+  </p>
 </div>
-
-<script>
-// 来源分类筛选（与我的考试记录页一致）
-document.querySelectorAll('.src-tab').forEach(function (btn) {
-  btn.addEventListener('click', function () {
-    document.querySelectorAll('.src-tab').forEach(function (b) { b.classList.remove('active'); });
-    btn.classList.add('active');
-    var cat = btn.dataset.src;
-    document.querySelectorAll('.paper-row').forEach(function (row) {
-      row.style.display = (cat === '__ALL__' || row.dataset.cat === cat) ? '' : 'none';
-    });
-  });
-});
-</script>
 
 <div class="card">
   <h3>我的易错题 TOP10</h3>
@@ -99,9 +75,11 @@ document.querySelectorAll('.src-tab').forEach(function (btn) {
   var myAcc = {{ me.accuracy or 0 }};
   var finishedPapers = [
     {% for p in papers %}{% if p.status == 'finished' and p.score is not none %}
-    {name:'第{{ p.id }}场', score:{{ p.score }}},
+    {score:{{ p.score }}},
     {% endif %}{% endfor %}
   ].reverse();
+  // 按考试先后顺序编号（第1场、第2场……），不使用全站试卷ID
+  finishedPapers.forEach(function (d, i) { d.name = '第' + (i + 1) + '场'; });
   var weakData = [
     {% for w in weak %}
     {name:{{ (w.stem or '')[:18]|tojson }}, cnt:{{ w.wrong_count }}},
