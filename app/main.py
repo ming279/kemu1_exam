@@ -623,6 +623,19 @@ def stats():
     return render_template('stats.html', me=me, papers=my_papers, weak=my_weak)
 
 
+@app.route('/my-papers')
+@login_required
+def my_papers():
+    """我的全部考试记录（含进行中与已完成，可继续作答或回看成绩单）"""
+    papers = q(
+        "SELECT p.id, p.total_count, p.score, p.status, "
+        "p.started_at, p.submitted_at, t.title AS task_title "
+        "FROM exam_paper p LEFT JOIN task t ON t.id = p.task_id "
+        "WHERE p.user_id=%s ORDER BY p.id DESC",
+        (session['uid'],))
+    return render_template('my_papers.html', papers=papers)
+
+
 @app.route('/stats/clear/papers', methods=['POST'])
 @login_required
 def stats_clear_papers():

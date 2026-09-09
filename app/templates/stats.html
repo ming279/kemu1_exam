@@ -44,7 +44,7 @@
 </div>
 
 <div class="card">
-  <h3>最近考试记录</h3>
+  <h3>最近考试记录<a class="btn small secondary" href="{{ url_for('my_papers') }}" style="float:right;">查看全部</a></h3>
   <table>
     <tr><th>试卷号</th><th>来源</th><th>题数</th><th>得分</th><th>状态</th><th>提交时间</th><th></th></tr>
     {% for p in papers %}
