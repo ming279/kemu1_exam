@@ -45,10 +45,18 @@
 
 <div class="card">
   <h3>最近考试记录<a class="btn small secondary" href="{{ url_for('my_papers') }}" style="float:right;">查看全部</a></h3>
+  {% if papers %}
+  <div class="src-tabs" style="display:flex;flex-wrap:wrap;gap:8px;margin:12px 0;">
+    <button type="button" class="btn small src-tab active" data-src="__ALL__">全部（{{ papers|length }}）</button>
+    {% for name, cnt in sources %}
+    <button type="button" class="btn small src-tab" data-src="{{ name }}">{{ name }}（{{ cnt }}）</button>
+    {% endfor %}
+  </div>
+  {% endif %}
   <table>
     <tr><th>开考时间</th><th>来源</th><th>题数</th><th>得分</th><th>状态</th><th>提交时间</th><th></th></tr>
     {% for p in papers %}
-    <tr>
+    <tr class="paper-row" data-src="{{ p.task_title or '模拟考试' }}">
       <td>{{ p.started_at or '—' }}</td>
       <td>{{ p.task_title or '模拟考试' }}</td>
       <td>{{ p.total_count }}</td>
@@ -60,6 +68,20 @@
     {% else %}<tr><td colspan="7" class="muted">暂无考试记录</td></tr>{% endfor %}
   </table>
 </div>
+
+<script>
+// 来源分类筛选（与我的考试记录页一致）
+document.querySelectorAll('.src-tab').forEach(function (btn) {
+  btn.addEventListener('click', function () {
+    document.querySelectorAll('.src-tab').forEach(function (b) { b.classList.remove('active'); });
+    btn.classList.add('active');
+    var src = btn.dataset.src;
+    document.querySelectorAll('.paper-row').forEach(function (row) {
+      row.style.display = (src === '__ALL__' || row.dataset.src === src) ? '' : 'none';
+    });
+  });
+});
+</script>
 
 <div class="card">
   <h3>我的易错题 TOP10</h3>
