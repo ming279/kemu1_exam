@@ -837,17 +837,17 @@ def stats():
     radar_names = [r['root_name'] for r in radar_rows]
     radar_values = [round(float(r['corrects'] or 0) * 100.0 / r['attempts'], 1)
                     for r in radar_rows]
-    # C11 学习热力图（近 12 周每天练习作答量）
+    # C11 学习热力图（近 12 个月每天练习作答量）
     heat_raw = q("SELECT DATE(practiced_at) d, COUNT(*) c FROM practice "
                  "WHERE user_id=%s AND practiced_at >= "
-                 "DATE_SUB(CURDATE(), INTERVAL 83 DAY) GROUP BY DATE(practiced_at)",
+                 "DATE_SUB(CURDATE(), INTERVAL 364 DAY) GROUP BY DATE(practiced_at)",
                  (session['uid'],))
     hmap = {str(r['d']): int(r['c']) for r in heat_raw}
     today = date.today()
     heat_list = [
-        [(today - timedelta(days=83 - i)).isoformat(),
-         hmap.get((today - timedelta(days=83 - i)).isoformat(), 0)]
-        for i in range(84)]
+        [(today - timedelta(days=364 - i)).isoformat(),
+         hmap.get((today - timedelta(days=364 - i)).isoformat(), 0)]
+        for i in range(365)]
     # C12 成就徽章（C13 连续天数由上下文处理器注入）
     achievements = _achievements(session['uid'], _study_streak(session['uid']))
     ach_unlocked = sum(1 for a in achievements if a[3])
