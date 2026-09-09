@@ -73,6 +73,7 @@
       <td>{{ '考试' if r.purpose == 'exam' else '讲解' }}</td>
       <td>{{ '不限时' if not r.time_limit_sec else (r.time_limit_sec // 60 ~ ' 分钟') }}</td>
       <td>{{ '是' if r.shuffle_order else '否' }}</td>
+      <td>{{ '全员' if r.target_all else '指定 ' ~ r.target_list|length ~ ' 人' }}</td>
       <td>
         {% if r.status == 'published' %}<span class="tag-ok">进行中</span>
         {% elif r.status == 'closed' %}<span class="muted">已关闭</span>
@@ -83,7 +84,9 @@
       <td>
         <button class="btn small secondary edit-btn" data-id="{{ r.id }}"
                 data-title="{{ r.title }}"
-                data-min="{{ r.time_limit_sec // 60 if r.time_limit_sec else '' }}">编辑</button>
+                data-min="{{ r.time_limit_sec // 60 if r.time_limit_sec else '' }}"
+                data-all="{{ '1' if r.target_all else '0' }}"
+                data-targets="{{ r.target_list|join(',') }}">编辑</button>
         {% if r.status == 'published' %}
         <form method="post" action="{{ url_for('admin_tasks_close', tid=r.id) }}" class="inline">
           <button class="btn small" type="submit" onclick="return confirm('确认关闭任务？关闭后学生不能再参加。')">关闭</button>
@@ -104,11 +107,11 @@
   {% endif %}
 </div>
 
-<!-- 编辑任务弹窗（只改标题/时限，题目不可改） -->
+<!-- 编辑任务弹窗（标题/时限/接收名单可改，题目不可改） -->
 <div id="edit-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.4); z-index:99; align-items:center; justify-content:center;">
-  <div class="card" style="max-width:480px; margin:auto;">
+  <div class="card" style="max-width:520px; margin:auto; max-height:90vh; overflow:auto;">
     <h3>编辑任务 #<span id="edit-id"></span></h3>
-    <p class="muted">仅可修改标题和时限，题目内容不可更改。</p>
+    <p class="muted">可修改标题、时限与接收名单，题目内容不可更改。</p>
     <form method="post" action="" id="edit-form">
       <table>
         <tr><td style="width:90px">标题</td>
@@ -116,6 +119,22 @@
         <tr><td>时限(分钟)</td>
           <td><input type="number" name="time_limit" id="edit-min" min="1" max="300" style="width:100px">
             <span class="muted">留空=不限时</span></td></tr>
+        <tr><td>接收范围</td>
+          <td>
+            <label><input type="radio" name="target_scope" value="all"> 全体学生</label>
+            <label><input type="radio" name="target_scope" value="custom"> 指定学生</label>
+            <div class="target-pick" style="display:none; margin-top:8px; max-height:150px; overflow:auto; border:1px solid var(--line); border-radius:8px; padding:8px; background:#f8fafc;">
+              <button type="button" class="btn small secondary target-toggle">全选/反选</button>
+              <div style="margin-top:6px;">
+              {% for s in students %}
+              <label style="display:inline-block; min-width:160px; padding:2px 0; font-weight:normal;">
+                <input type="checkbox" class="target-cb" name="target_uids" value="{{ s.id }}">
+                {{ s.username }}（{{ s.real_name or '未填姓名' }}）
+              </label>
+              {% endfor %}
+              </div>
+            </div>
+          </td></tr>
         <tr><td></td>
           <td>
             <button type="submit" class="btn">保存</button>
@@ -127,16 +146,45 @@
 </div>
 
 <script>
+// 接收范围：选"指定学生"展开名单（发布表单与编辑弹窗共用逻辑）
+function bindScope(container) {
+  var radios = container.querySelectorAll('input[name="target_scope"]');
+  var pick = container.querySelector('.target-pick');
+  function refresh() {
+    var custom = container.querySelector('input[name="target_scope"]:checked');
+    pick.style.display = (custom && custom.value === 'custom') ? 'block' : 'none';
+  }
+  radios.forEach(function(r) { r.addEventListener('change', refresh); });
+  var toggleBtn = pick.querySelector('.target-toggle');
+  toggleBtn.addEventListener('click', function() {
+    var cbs = pick.querySelectorAll('.target-cb');
+    var allChecked = Array.prototype.every.call(cbs, function(c) { return c.checked; });
+    cbs.forEach(function(c) { c.checked = !allChecked; });
+  });
+  refresh();
+}
+bindScope(document.getElementById('create-form'));
+bindScope(document.getElementById('edit-form'));
+
 document.querySelectorAll('.edit-btn').forEach(function(btn) {
   btn.addEventListener('click', function() {
     var id = this.dataset.id;
-    var title = this.dataset.title;
-    var min = this.dataset.min;
+    var modal = document.getElementById('edit-modal');
     document.getElementById('edit-id').textContent = id;
-    document.getElementById('edit-title').value = title;
-    document.getElementById('edit-min').value = min;
+    document.getElementById('edit-title').value = this.dataset.title;
+    document.getElementById('edit-min').value = this.dataset.min;
     document.getElementById('edit-form').action = '/admin/tasks/' + id + '/edit';
-    document.getElementById('edit-modal').style.display = 'flex';
+    // 接收范围回填
+    var isAll = this.dataset.all === '1';
+    modal.querySelector('input[name="target_scope"][value="' + (isAll ? 'all' : 'custom') + '"]').checked = true;
+    var targets = (this.dataset.targets || '').split(',').filter(Boolean);
+    modal.querySelectorAll('.target-cb').forEach(function(cb) {
+      cb.checked = targets.indexOf(cb.value) >= 0;
+    });
+    modal.querySelectorAll('input[name="target_scope"]').forEach(function(r) {
+      r.dispatchEvent(new Event('change'));
+    });
+    modal.style.display = 'flex';
   });
 });
 

@@ -140,6 +140,7 @@ CREATE TABLE wrong_book (
     user_id       INT NOT NULL,
     question_id   INT NOT NULL,
     wrong_count   INT NOT NULL DEFAULT 1 COMMENT '累计错误次数',
+    correct_streak INT NOT NULL DEFAULT 0 COMMENT '连续答对次数（连对2次自动掌握）',
     last_wrong_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     mastered      BOOLEAN NOT NULL DEFAULT FALSE COMMENT '是否已掌握（移出错题本）',
     UNIQUE KEY uq_uq (user_id, question_id),

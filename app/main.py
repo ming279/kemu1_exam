@@ -221,9 +221,11 @@ def index():
             "FROM task t LEFT JOIN task_record tr "
             "ON tr.task_id=t.id AND tr.uid=%s "
             "WHERE t.status='published' "
+            "AND (t.target_uids IS NULL OR t.target_uids='' "
+            "     OR FIND_IN_SET(%s, t.target_uids)) "
             "AND (tr.status IS NULL OR tr.status='in_progress') "
             "ORDER BY t.id DESC",
-            (session['uid'],))
+            (session['uid'], session['uid']))
     return render_template('index.html', stats=stats, my_tasks=my_tasks)
 
 
@@ -359,13 +361,88 @@ def exam_result(pid):
 
 
 # ---------------- practice 模块 ----------------
-@app.route('/practice', methods=['POST'])
+# 练习模式枚举全链路统一英文码，中文名仅用于页面展示
+PRACTICE_MODES = {'random': '随机练习', 'category': '专项练习', 'wrong': '错题练习'}
+
+
+@app.route('/practice', methods=['GET'])
+@login_required
+def practice_home():
+    """练习中心：随机练习 / 专项练习（分类+题型）/ 错题练习"""
+    cats = q("SELECT id, name, parent_id FROM category ORDER BY parent_id, id")
+    name_map = {c['id']: c['name'] for c in cats}
+    cat_options = [{
+        'id': c['id'],
+        'label': (name_map[c['parent_id']] + ' / ' if c['parent_id'] else '')
+                 + c['name'],
+    } for c in cats]
+    wrong_n = q("SELECT COUNT(*) c FROM wrong_book WHERE user_id=%s AND mastered=0",
+                (session['uid'],), one=True)['c']
+    return render_template('practice_home.html', cat_options=cat_options,
+                           wrong_n=wrong_n)
+
+
+@app.route('/practice/start', methods=['POST'])
 @login_required
 def practice_start():
-    """随机抽 10 题开始一轮练习"""
-    ids = [r['id'] for r in
-           q("SELECT id FROM question ORDER BY RAND() LIMIT 10")]
+    """按模式生成练习题卡：模式只决定题目来源，答题/判分链路共用（题卡驱动）"""
+    mode = request.form.get('mode', 'random')
+    if mode not in PRACTICE_MODES:
+        mode = 'random'
+    try:
+        n = max(1, min(500, int(request.form.get('num', 10))))
+    except (TypeError, ValueError):
+        n = 10
+    label_parts = []
+
+    if mode == 'wrong':
+        rows = q("SELECT question_id FROM wrong_book WHERE user_id=%s AND mastered=0 "
+                 "ORDER BY RAND() LIMIT %s", (session['uid'], n))
+        ids = [r['question_id'] for r in rows]
+        if not ids:
+            flash('错题本里还没有需要练习的错题，先去随机练习吧！', 'info')
+            return redirect(url_for('practice_home'))
+        label_parts.append('错题练习')
+
+    elif mode == 'category':
+        cat_raw = request.form.get('category_id', 'all')
+        qtype = request.form.get('qtype', '')
+        where, params = [], []
+        if cat_raw == '0':
+            where.append("category_id IS NULL")
+            label_parts.append('未分类')
+        elif cat_raw == 'all':
+            label_parts.append('全部分类')
+        else:
+            cid = int(cat_raw)
+            where.append("category_id=%s")
+            params.append(cid)
+            cname = q("SELECT name FROM category WHERE id=%s", (cid,), one=True)
+            label_parts.append(cname['name'] if cname else '未知分类')
+        if qtype in ('judge', 'single', 'multi'):
+            where.append("qtype=%s")
+            params.append(qtype)
+            label_parts.append(QTYPE_NAME[qtype])
+        sql = "SELECT id FROM question"
+        if where:
+            sql += " WHERE " + " AND ".join(where)
+        sql += " ORDER BY RAND() LIMIT %s"
+        params.append(n)
+        ids = [r['id'] for r in q(sql, tuple(params))]
+        if not ids:
+            flash('该条件下没有可练习的题目', 'warning')
+            return redirect(url_for('practice_home'))
+
+    else:  # random
+        ids = [r['id'] for r in
+               q("SELECT id FROM question ORDER BY RAND() LIMIT %s", (n,))]
+
     session['p_ids'] = ids
+    session['p_mode'] = mode
+    session['p_mode_label'] = PRACTICE_MODES[mode] if mode != 'category' \
+        else '专项练习 · ' + ' · '.join(label_parts)
+    if mode == 'wrong':
+        session['p_mode_label'] = '错题练习'
     return redirect(url_for('practice_page', idx=0))
 
 
@@ -378,7 +455,8 @@ def practice_page(idx):
     question = load_questions([p_ids[idx]])[0]
     fb = session.pop('p_feedback', None)      # 上一题的判分反馈
     return render_template('practice.html', idx=idx, total=len(p_ids),
-                           question=question, feedback=fb)
+                           question=question, feedback=fb,
+                           mode_label=session.get('p_mode_label', '练习'))
 
 
 @app.route('/practice/answer', methods=['POST'])
@@ -395,15 +473,20 @@ def practice_answer():
     execute("INSERT INTO practice (user_id, question_id, user_answer, is_correct) "
             "VALUES (%s, %s, %s, %s)",
             (session['uid'], qid, ''.join(sorted(labels)) or None, int(ok)))
-    # 维护错题本：答错累计，答对标记已掌握
+    # 维护错题本：连对 2 次自动标记"已掌握"移出；答错重置连对计数并累计错次
     if ok:
-        execute("UPDATE wrong_book SET mastered=1 WHERE user_id=%s AND question_id=%s",
-                (session['uid'], qid))
+        # 注意 SET 左到右求值：先判 mastered（此时 correct_streak 为旧值），再自增
+        execute(
+            "UPDATE wrong_book SET "
+            "mastered = CASE WHEN correct_streak + 1 >= 2 THEN 1 ELSE mastered END, "
+            "correct_streak = correct_streak + 1 "
+            "WHERE user_id=%s AND question_id=%s",
+            (session['uid'], qid))
     else:
         execute(
             "INSERT INTO wrong_book (user_id, question_id) VALUES (%s, %s) "
             "ON DUPLICATE KEY UPDATE wrong_count = wrong_count + 1, "
-            "last_wrong_at = CURRENT_TIMESTAMP, mastered = 0",
+            "last_wrong_at = CURRENT_TIMESTAMP, mastered = 0, correct_streak = 0",
             (session['uid'], qid))
 
     session['p_feedback'] = dict(
@@ -417,7 +500,10 @@ def practice_answer():
 @login_required
 def practice_summary():
     p_ids = session.pop('p_ids', None) or []
-    return render_template('practice_summary.html', total=len(p_ids))
+    mode_label = session.pop('p_mode_label', '练习')
+    session.pop('p_mode', None)
+    return render_template('practice_summary.html', total=len(p_ids),
+                           mode_label=mode_label)
 
 
 # ---------------- wrongbook 模块 ----------------
@@ -425,13 +511,15 @@ def practice_summary():
 @login_required
 def wrongbook():
     rows = q(
-        "SELECT wb.id, wb.wrong_count, wb.last_wrong_at, q.id AS qid, "
-        "q.stem, q.qtype FROM wrong_book wb JOIN question q ON q.id = wb.question_id "
+        "SELECT wb.id, wb.wrong_count, wb.correct_streak, wb.last_wrong_at, "
+        "q.id AS qid, q.stem, q.qtype FROM wrong_book wb "
+        "JOIN question q ON q.id = wb.question_id "
         "WHERE wb.user_id=%s AND wb.mastered=0 ORDER BY wb.last_wrong_at DESC",
         (session['uid'],))
     items = load_questions([r['qid'] for r in rows])
     for r, it in zip(rows, items):
         it['wrong_count'] = r['wrong_count']
+        it['correct_streak'] = r['correct_streak']
         it['last_wrong_at'] = r['last_wrong_at']
     return render_template('wrongbook.html', questions=items)
 
@@ -809,12 +897,33 @@ def admin_tasks():
     rows = q(
         "SELECT t.id, t.title, t.judge_count, t.single_count, "
         "t.time_limit_sec, t.mode, t.purpose, t.shuffle_order, "
-        "t.status, t.created_at, t.closed_at, "
+        "t.target_uids, t.status, t.created_at, t.closed_at, "
         "(SELECT COUNT(*) FROM task_record tr WHERE tr.task_id=t.id) AS joined, "
         "(SELECT COUNT(*) FROM task_record tr WHERE tr.task_id=t.id "
         "  AND tr.status='completed') AS finished "
         "FROM task t ORDER BY t.id DESC")
-    return render_template('admin_tasks.html', rows=rows)
+    students = q("SELECT id, username, real_name FROM `user` "
+                 "WHERE role='student' ORDER BY id")
+    student_ids = {s['id'] for s in students}
+    for r in rows:
+        # 解析名单：空=全员；仅保留仍存在的学生 id
+        raw = [x for x in (r['target_uids'] or '').split(',') if x]
+        targets = [int(x) for x in raw if x.isdigit() and int(x) in student_ids]
+        r['target_all'] = not targets
+        r['target_list'] = targets
+    return render_template('admin_tasks.html', rows=rows, students=students)
+
+
+def _form_target_uids():
+    """从发布/编辑表单读取接收名单：(target_uids 逗号串或 None=全员, 错误消息或 None)"""
+    if request.form.get('target_scope', 'all') == 'all':
+        return None, None
+    valid = {r['id'] for r in q("SELECT id FROM `user` WHERE role='student'")}
+    uids = [int(x) for x in request.form.getlist('target_uids') if x.isdigit()]
+    uids = [u for u in uids if u in valid]
+    if not uids:
+        return None, '请至少勾选一名接收学生（或选择"全体学生"）'
+    return ','.join(map(str, uids)), None
 
 
 @app.route('/admin/tasks/create', methods=['POST'])
@@ -941,9 +1050,14 @@ def admin_tasks_edit(tid):
             flash('时限必须为整数分钟', 'danger')
             return redirect(url_for('admin_tasks'))
 
-    execute("UPDATE task SET title=%s, time_limit_sec=%s WHERE id=%s",
-            (title, time_limit_sec, tid))
-    flash(f'任务 #{tid} 已更新', 'success')
+    target_uids, err = _form_target_uids()
+    if err:
+        flash(err, 'danger')
+        return redirect(url_for('admin_tasks'))
+
+    execute("UPDATE task SET title=%s, time_limit_sec=%s, target_uids=%s "
+            "WHERE id=%s", (title, time_limit_sec, target_uids, tid))
+    flash(f'任务 #{tid} 已更新（标题/时限/接收名单）', 'success')
     return redirect(url_for('admin_tasks'))
 
 
@@ -958,6 +1072,12 @@ def task_start(tid):
         return redirect(url_for('index'))
 
     uid = session['uid']
+    # 定向任务校验：不在接收名单内禁止进入（防手敲 URL）
+    targets = [x for x in (task['target_uids'] or '').split(',') if x]
+    if targets and str(uid) not in targets:
+        flash('该任务未向你发布', 'danger')
+        return redirect(url_for('index'))
+
     # 查询是否已有记录
     rec = q("SELECT * FROM task_record WHERE task_id=%s AND uid=%s",
             (tid, uid), one=True)

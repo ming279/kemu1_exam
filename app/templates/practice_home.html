@@ -1,0 +1,64 @@
+{% extends 'base.html' %}
+{% block content %}
+<h2>练习中心</h2>
+
+<div class="grid" style="grid-template-columns:repeat(3,1fr);">
+  <!-- 随机练习 -->
+  <div class="card">
+    <h3>🎲 随机练习</h3>
+    <p class="muted">从全部题库随机抽题，适合日常刷题保持手感。</p>
+    <form method="post" action="{{ url_for('practice_start') }}">
+      <input type="hidden" name="mode" value="random">
+      <label>每轮题数</label>
+      <input type="number" name="num" value="10" min="1" max="500" style="width:100px">
+      <button class="btn" type="submit" style="margin-top:10px;">开始随机练习</button>
+    </form>
+  </div>
+
+  <!-- 专项练习 -->
+  <div class="card">
+    <h3>🎯 专项练习</h3>
+    <p class="muted">按知识分类和题型集中突破薄弱环节。</p>
+    <form method="post" action="{{ url_for('practice_start') }}">
+      <input type="hidden" name="mode" value="category">
+      <label>知识分类</label>
+      <select name="category_id" style="width:100%;">
+        <option value="all">全部分类</option>
+        <option value="0">未分类题</option>
+        {% for c in cat_options %}
+        <option value="{{ c.id }}">{{ c.label }}</option>
+        {% endfor %}
+      </select>
+      <label style="margin-top:8px;">题型</label>
+      <select name="qtype" style="width:100%;">
+        <option value="">全部题型</option>
+        <option value="judge">判断题</option>
+        <option value="single">单选题</option>
+        <option value="multi">多选题</option>
+      </select>
+      <label style="margin-top:8px;">每轮题数</label>
+      <input type="number" name="num" value="20" min="1" max="500" style="width:100px">
+      <button class="btn" type="submit" style="margin-top:10px;">开始专项练习</button>
+    </form>
+  </div>
+
+  <!-- 错题练习 -->
+  <div class="card" style="{% if not wrong_n %}opacity:.7;{% endif %}">
+    <h3>❌ 错题练习</h3>
+    <p class="muted">专攻错题本里的题，<b>连对 2 次</b>自动移出错题本。</p>
+    <p>当前未掌握错题：<b class="tag-bad">{{ wrong_n }}</b> 道</p>
+    <form method="post" action="{{ url_for('practice_start') }}">
+      <input type="hidden" name="mode" value="wrong">
+      <label>每轮题数</label>
+      <input type="number" name="num" value="10" min="1" max="500" style="width:100px"
+             {% if not wrong_n %}disabled{% endif %}>
+      <button class="btn" type="submit" style="margin-top:10px;"
+              {% if not wrong_n %}disabled{% endif %}>开始错题练习</button>
+    </form>
+  </div>
+</div>
+
+<p class="muted" style="margin-top:12px;">
+  练习答错的题自动进入错题本；可在 <a href="{{ url_for('wrongbook') }}">错题本</a> 查看全部错题与答案解析。
+</p>
+{% endblock %}
