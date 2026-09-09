@@ -634,7 +634,18 @@ def my_papers():
         "FROM exam_paper p LEFT JOIN task t ON t.id = p.task_id "
         "WHERE p.user_id=%s ORDER BY p.id DESC",
         (session['uid'],))
-    return render_template('my_papers.html', papers=papers)
+    # 来源分类：模拟考试 + 各任务，按数量/出现顺序生成筛选项
+    counts = {}
+    for p in papers:
+        src = p['task_title'] or '模拟考试'
+        counts[src] = counts.get(src, 0) + 1
+    sources = []
+    if counts.get('模拟考试'):
+        sources.append(('模拟考试', counts['模拟考试']))
+    for src, n in counts.items():
+        if src != '模拟考试':
+            sources.append((src, n))
+    return render_template('my_papers.html', papers=papers, sources=sources)
 
 
 @app.route('/stats/clear/papers', methods=['POST'])

@@ -7,13 +7,20 @@
   {% set n_done = papers | selectattr('status', 'equalto', 'finished') | list | length %}
   <p class="muted">已完成 {{ n_done }} 份，进行中 {{ papers|length - n_done }} 份。
     进行中的试卷可继续作答（作答内容已自动保存），已完成的可回看成绩单与解析。</p>
+
   {% if not papers %}
   <p class="muted">还没有考试记录，去 <a href="{{ url_for('index') }}">首页</a> 开始一场模拟考试吧。</p>
   {% else %}
-  <table>
+  <div class="src-tabs" style="display:flex;flex-wrap:wrap;gap:8px;margin:12px 0;">
+    <button type="button" class="btn small src-tab active" data-src="__ALL__">全部（{{ papers|length }}）</button>
+    {% for name, cnt in sources %}
+    <button type="button" class="btn small src-tab" data-src="{{ name }}">{{ name }}（{{ cnt }}）</button>
+    {% endfor %}
+  </div>
+  <table id="papers-table">
     <tr><th>开考时间</th><th>来源</th><th>题数</th><th>得分</th><th>状态</th><th>提交时间</th><th>操作</th></tr>
     {% for p in papers %}
-    <tr>
+    <tr class="paper-row" data-src="{{ p.task_title or '模拟考试' }}">
       <td>{{ p.started_at or '—' }}</td>
       <td>{{ p.task_title or '模拟考试' }}</td>
       <td>{{ p.total_count }}</td>
@@ -29,7 +36,25 @@
       </td>
     </tr>
     {% endfor %}
+    <tr id="papers-empty" style="display:none;"><td colspan="7" class="muted">该分类下暂无记录</td></tr>
   </table>
   {% endif %}
 </div>
+
+<script>
+// 来源分类筛选：纯前端过滤
+document.querySelectorAll('.src-tab').forEach(function (btn) {
+  btn.addEventListener('click', function () {
+    document.querySelectorAll('.src-tab').forEach(function (b) { b.classList.remove('active'); });
+    btn.classList.add('active');
+    var src = btn.dataset.src, shown = 0;
+    document.querySelectorAll('.paper-row').forEach(function (row) {
+      var show = src === '__ALL__' || row.dataset.src === src;
+      row.style.display = show ? '' : 'none';
+      if (show) shown++;
+    });
+    document.getElementById('papers-empty').style.display = shown ? 'none' : '';
+  });
+});
+</script>
 {% endblock %}
