@@ -31,6 +31,145 @@
 .flash-green { animation:flashG .5s; }
 @keyframes flashG { 0%{background:#dcfce7;} 100%{background:transparent;} }
 @media (max-width:768px){ .pk-wrap { flex-direction:column; } .pk-track { flex:none; height:380px; } }
+
+/* ============ 胜利结算覆盖层 ============ */
+#victory-overlay {
+  position: fixed; inset: 0;
+  background: rgba(8,12,28,0.82);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  display: none;
+  align-items: center; justify-content: center;
+  flex-direction: column;
+  z-index: 1500;
+  opacity: 0;
+  transition: opacity 0.4s ease;
+}
+#victory-overlay.show { display: flex; opacity: 1; }
+#victory-overlay.lose { background: rgba(8,12,28,0.90); }
+
+/* 光环 */
+.vh-halo {
+  position: absolute;
+  width: 480px; height: 480px;
+  border-radius: 50%;
+  background: conic-gradient(
+    from 0deg,
+    rgba(253,224,71,0) 0deg,
+    rgba(253,224,71,0.45) 60deg,
+    rgba(245,158,11,0.65) 120deg,
+    rgba(253,224,71,0.35) 180deg,
+    rgba(180,83,9,0.55) 240deg,
+    rgba(253,224,71,0.5) 300deg,
+    rgba(253,224,71,0) 360deg
+  );
+  filter: blur(20px);
+  animation: vh-halo-rot 8s linear infinite;
+  z-index: 1;
+}
+.vh-halo.lose { background: conic-gradient(from 0deg, rgba(100,116,139,0.4), rgba(220,38,38,0.3), rgba(100,116,139,0.4)); }
+@keyframes vh-halo-rot {
+  from { transform: rotate(0deg) scale(0.8); }
+  to { transform: rotate(360deg) scale(0.8); }
+}
+
+/* 主标题容器（只做布局和入场动画，视觉留给子 span） */
+.vh-title {
+  position: relative; z-index: 2;
+  display: inline-block;
+  font-size: 84px; font-weight: 900;
+  letter-spacing: 4px;
+  /* 清除所有会穿透/继承到子元素的视觉属性 */
+  background: none; background-clip: border-box; -webkit-background-clip: border-box;
+  -webkit-text-fill-color: initial; text-shadow: none; filter: none;
+  transform: scale(0.3); opacity: 0;
+  animation: vh-pop 0.7s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+  animation-delay: 0.15s;
+}
+@keyframes vh-pop {
+  0% { transform: scale(0.3); opacity: 0; }
+  70% { transform: scale(1.15); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+/* 普通字：渐变金色 */
+.vh-title .vh-normal {
+  background: linear-gradient(135deg, #fef3c7 0%, #fde047 30%, #f59e0b 60%, #b45309 100%);
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent;
+  filter:
+    drop-shadow(0 0 10px rgba(253,224,71,0.8))
+    drop-shadow(0 0 20px rgba(245,158,11,0.6))
+    drop-shadow(3px 3px 0 rgba(0,0,0,0.7));
+}
+/* 败方字：灰色渐变 */
+.vh-title .vh-lose {
+  background: linear-gradient(135deg, #cbd5e1 0%, #94a3b8 50%, #475569 100%);
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent;
+  filter:
+    drop-shadow(0 0 10px rgba(148,163,184,0.6))
+    drop-shadow(3px 3px 0 rgba(0,0,0,0.7));
+}
+/* 强调字：机、霸 —— 纯金色填充，字号放大，脉动 */
+.vh-title .vh-emph {
+  display: inline-block;
+  font-size: 1.18em;
+  color: #fde047;
+  -webkit-text-fill-color: #fde047;
+  background: none;
+  filter:
+    drop-shadow(0 0 16px rgba(253,224,71,1))
+    drop-shadow(0 0 32px rgba(245,158,11,0.85))
+    drop-shadow(3px 3px 0 rgba(0,0,0,0.85));
+  animation: vh-emph-pulse 1.4s ease-in-out infinite;
+}
+@keyframes vh-emph-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.08); }
+}
+
+.vh-sub {
+  position: relative; z-index: 2;
+  margin-top: 24px;
+  font-size: 22px; font-weight: 600;
+  color: #fde047;
+  text-shadow: 0 2px 8px rgba(0,0,0,0.6);
+  opacity: 0;
+  animation: vh-sub-in 0.6s ease 0.7s forwards;
+}
+.vh-sub.lose { color: #94a3b8; }
+@keyframes vh-sub-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.vh-card {
+  position: relative; z-index: 2;
+  margin-top: 36px;
+  background: rgba(15,23,42,0.7);
+  border: 1px solid rgba(253,224,71,0.3);
+  border-radius: 12px;
+  padding: 20px 32px;
+  text-align: center;
+  opacity: 0;
+  animation: vh-sub-in 0.6s ease 1.0s forwards;
+}
+.vh-card.lose { border-color: rgba(148,163,184,0.3); }
+.vh-score {
+  font-size: 56px; font-weight: 900;
+  color: #fde047;
+  text-shadow: 0 0 12px rgba(253,224,71,0.4);
+  margin-bottom: 8px;
+}
+.vh-score.lose { color: #cbd5e1; text-shadow: none; }
+.vh-score .me { color: #16a34a; }
+.vh-score.lose .me { color: #94a3b8; }
+.vh-detail { color: #94a3b8; font-size: 14px; margin-bottom: 14px; }
+#fx-canvas {
+  position: fixed; inset: 0;
+  pointer-events: none;
+  z-index: 1600;
+}
 </style>
 
 <div id="opp-banner" style="display:none;position:fixed;top:70px;left:50%;transform:translateX(-50%);z-index:999;align-items:center;gap:10px;background:#7f1d1d;color:#fff;padding:10px 18px;border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.35);">
@@ -78,7 +217,7 @@
       </div>
     </div>
 
-    <!-- 结果阶段 -->
+    <!-- 结果阶段（旧卡片保留但默认隐藏，覆盖层控制展示） -->
     <div class="card" id="result-panel" style="display:none; text-align:center;">
       <h2 id="result-title"></h2>
       <div style="font-size:48px; font-weight:900; margin:20px 0;">
@@ -89,6 +228,23 @@
     </div>
   </div>
 </div>
+
+<!-- ============ 胜利结算覆盖层（独立于主布局之上，z-index 最高） ============ -->
+<div id="victory-overlay">
+  <div class="vh-halo" id="vh-halo"></div>
+  <div class="vh-title" id="vh-title">
+    <span class="vh-normal">你才是</span><span class="vh-emph">机</span><span class="vh-normal">动车</span><span class="vh-emph">霸</span><span class="vh-normal">王</span>
+  </div>
+  <div class="vh-sub" id="vh-sub">🚗 本场最佳车手 · 你答对 0 题</div>
+  <div class="vh-card" id="vh-card">
+    <div class="vh-score" id="vh-score"><span class="me">0</span> : <span>0</span></div>
+    <div class="vh-detail" id="vh-detail">你答对 0 题，对手答对 0 题</div>
+    <a href="{{ url_for('pk_lobby') }}" class="btn">返回大厅</a>
+  </div>
+</div>
+
+<!-- 全屏特效 Canvas（烟花 + 彩带） -->
+<canvas id="fx-canvas"></canvas>
 
 <script src="{{ url_for('static', filename='socket.io.min.js') }}"></script>
 <script>
@@ -101,6 +257,98 @@ var NAME_O = {{ rec.o_name|tojson }};
 var socket = io();
 var myAnswered = false;
 var timerHandle = null;
+
+/* ===================== 全屏特效 Canvas（结算用烟花+彩带） ===================== */
+var fvCV = document.getElementById('fx-canvas');
+var fvCT = fvCV.getContext('2d');
+var fvW = 0, fvH = 0;
+function fvResize(){ var dpr=window.devicePixelRatio||1; fvW=innerWidth; fvH=innerHeight; fvCV.width=fvW*dpr; fvCV.height=fvH*dpr; fvCT.setTransform(dpr,0,0,dpr,0,0); }
+addEventListener('resize', fvResize); fvResize();
+var fvConfetti = [], fvFireworks = [];
+var FV_COLORS = ['#fbbf24','#ef4444','#3b82f6','#10b981','#ec4899','#fde047','#fff'];
+
+function fvSpawnConfetti(n){
+  for (var i=0;i<n;i++){
+    fvConfetti.push({
+      x: Math.random()*fvW,
+      y: -20 - Math.random()*200,
+      vx: (Math.random()-0.5)*2,
+      vy: 2 + Math.random()*4,
+      w: 6 + Math.random()*8,
+      h: 10 + Math.random()*10,
+      color: FV_COLORS[Math.floor(Math.random()*FV_COLORS.length)],
+      rot: Math.random()*Math.PI*2,
+      vr: (Math.random()-0.5)*0.3
+    });
+  }
+}
+function fvSpawnFirework(x, y){
+  var n = 50 + Math.floor(Math.random()*30);
+  var color = FV_COLORS[Math.floor(Math.random()*FV_COLORS.length)];
+  for (var i=0;i<n;i++){
+    var a = (i/n)*Math.PI*2, sp = 2 + Math.random()*5;
+    fvFireworks.push({
+      x:x, y:y, vx:Math.cos(a)*sp, vy:Math.sin(a)*sp,
+      color:color, life:1, trail:[]
+    });
+  }
+}
+var fvRunning = false;
+function fvLoop(){
+  fvCT.clearRect(0,0,fvW,fvH);
+  // 彩带
+  for (var i=fvConfetti.length-1;i>=0;i--){
+    var c = fvConfetti[i];
+    c.x += c.vx; c.y += c.vy; c.rot += c.vr; c.vy += 0.05;
+    if (c.y > fvH+40){ fvConfetti.splice(i,1); continue; }
+    fvCT.save();
+    fvCT.translate(c.x, c.y); fvCT.rotate(c.rot);
+    fvCT.fillStyle = c.color;
+    fvCT.fillRect(-c.w/2, -c.h/2, c.w, c.h);
+    fvCT.restore();
+  }
+  // 烟花
+  for (var j=fvFireworks.length-1;j>=0;j--){
+    var p = fvFireworks[j];
+    p.trail.push({x:p.x, y:p.y});
+    if (p.trail.length > 6) p.trail.shift();
+    p.x += p.vx; p.y += p.vy;
+    p.vy += 0.08; p.vx *= 0.98;
+    p.life -= 0.012;
+    if (p.life <= 0){ fvFireworks.splice(j,1); continue; }
+    for (var k=0;k<p.trail.length;k++){
+      var t = p.trail[k];
+      fvCT.globalAlpha = (k/p.trail.length) * p.life * 0.5;
+      fvCT.fillStyle = p.color;
+      fvCT.beginPath(); fvCT.arc(t.x, t.y, 2, 0, Math.PI*2); fvCT.fill();
+    }
+    fvCT.globalAlpha = p.life;
+    fvCT.fillStyle = p.color;
+    fvCT.shadowColor = p.color; fvCT.shadowBlur = 8;
+    fvCT.beginPath(); fvCT.arc(p.x, p.y, 2.5, 0, Math.PI*2); fvCT.fill();
+    fvCT.shadowBlur = 0;
+    fvCT.globalAlpha = 1;
+  }
+  if (fvConfetti.length || fvFireworks.length){
+    fvRunning = true;
+    requestAnimationFrame(fvLoop);
+  } else { fvRunning = false; }
+}
+function fvStart(){ if (!fvRunning){ fvRunning = true; requestAnimationFrame(fvLoop); } }
+function fvClear(){ fvConfetti = []; fvFireworks = []; }
+function fxVictory(){
+  // 烟花：左右+顶部多点
+  setTimeout(function(){ fvSpawnFirework(fvW*0.25, fvH*0.35); }, 200);
+  setTimeout(function(){ fvSpawnFirework(fvW*0.75, fvH*0.35); }, 500);
+  setTimeout(function(){ fvSpawnFirework(fvW*0.5, fvH*0.25); }, 800);
+  setTimeout(function(){ fvSpawnFirework(fvW*0.4, fvH*0.45); }, 1200);
+  setTimeout(function(){ fvSpawnFirework(fvW*0.6, fvH*0.45); }, 1500);
+  fvSpawnConfetti(80);
+  setTimeout(function(){ fvSpawnConfetti(40); }, 600);
+  setTimeout(function(){ fvSpawnConfetti(40); }, 1200);
+  fvStart();
+}
+function fxFail(){ fvSpawnConfetti(20); fvStart(); }
 
 /* ===================== 音效：Web Audio 合成（零素材） ===================== */
 var SFX = {
@@ -848,34 +1096,66 @@ function showEmoji(e, mine) {
   setTimeout(function(){ div.remove(); }, 1200);
 }
 
-// 游戏结束：胜者冲线 + 彩带雨 + 胜利/失败音
+// 游戏结束：胜者冲线 + 全屏结算覆盖层 + 烟花/彩带雨
 socket.on('game_over', function(d) {
   clearInterval(timerHandle);
   race.finished = true;
   document.getElementById('play-panel').style.display = 'none';
-  document.getElementById('result-panel').style.display = 'block';
   var myScore = d.scores[MY_UID] || 0;
   var oppUid = d.challenger == MY_UID ? d.opponent : d.challenger;
   var oppScore = d.scores[oppUid] || 0;
-  document.getElementById('result-score-me').textContent = myScore;
-  document.getElementById('result-score-opp').textContent = oppScore;
-  var title = document.getElementById('result-title');
-  if (d.winner === MY_UID) {
-    title.innerHTML = '🎉 胜利！';
-    title.style.color = '#16a34a';
-    SFX.win();
-  } else if (d.winner) {
-    title.innerHTML = '😢 惜败';
-    title.style.color = '#dc2626';
-    SFX.lose();
-  } else {
-    title.innerHTML = '🤝 平局';
-  }
-  document.getElementById('result-detail').textContent =
-    '你答对 ' + myScore + ' 题，对手答对 ' + oppScore + ' 题';
-  // 胜者车冲过终点线，彩带雨从天而降
+
+  // 胜者车冲过终点线 + 赛道彩带
   if (d.winner) cars[carSideOf(d.winner)].p = 1.0;
-  fxConfetti();
+  fxConfetti();  // 赛道自带彩带（Canvas 内）
+
+  // 切换到全屏结算覆盖层
+  var ov = document.getElementById('victory-overlay');
+  var halo = document.getElementById('vh-halo');
+  var title = document.getElementById('vh-title');
+  var sub = document.getElementById('vh-sub');
+  var card = document.getElementById('vh-card');
+  var scoreLine = document.getElementById('vh-score');
+  var scoreDetail = document.getElementById('vh-detail');
+
+  // 重置类，强制重排触发动画
+  ov.className = ''; halo.className = 'vh-halo';
+  void ov.offsetWidth;  // reflow
+
+  if (d.winner === MY_UID) {
+    /* ===== 胜利 ===== */
+    ov.classList.add('show');
+    title.innerHTML = '<span class="vh-normal">你才是</span><span class="vh-emph">机</span><span class="vh-normal">动车</span><span class="vh-emph">霸</span><span class="vh-normal">王</span>';
+    sub.textContent = '🚗 本场最佳车手 · 你答对 ' + myScore + ' 题';
+    scoreLine.innerHTML = '<span class="me">' + myScore + '</span> : <span>' + oppScore + '</span>';
+    scoreDetail.textContent = '你答对 ' + myScore + ' 题，对手答对 ' + oppScore + ' 题';
+    SFX.win();
+    fxVictory();
+  } else if (d.winner) {
+    /* ===== 失败 ===== */
+    ov.classList.add('lose','show');
+    halo.classList.add('lose');
+    title.innerHTML = '<span class="vh-lose">技不如人，下次再战</span>';
+    sub.classList.add('lose');
+    sub.textContent = '💪 对手答对 ' + oppScore + ' 题 · 再来一局？';
+    card.classList.add('lose');
+    scoreLine.classList.add('lose');
+    scoreLine.innerHTML = '<span class="me">' + myScore + '</span> : <span>' + oppScore + '</span>';
+    scoreDetail.textContent = '你答对 ' + myScore + ' 题，对手答对 ' + oppScore + ' 题';
+    SFX.lose();
+    fxFail();
+  } else {
+    /* ===== 平局 ===== */
+    ov.classList.add('show');
+    title.innerHTML = '<span class="vh-normal">英雄相惜</span>';
+    sub.textContent = '🤝 双方均答对 ' + myScore + ' 题';
+    scoreLine.innerHTML = '<span class="me">' + myScore + '</span> : <span>' + oppScore + '</span>';
+    scoreDetail.textContent = '势均力敌，平分秋色';
+    fxVictory();
+  }
+
+  // 兼容旧 result-panel（隐藏即可，overlay 已覆盖）
+  document.getElementById('result-panel').style.display = 'none';
 });
 
 // 对方掉线：显示横幅；若重连回房间（room_state 到达）横幅自动消失
