@@ -334,6 +334,7 @@ def exam_page(pid):
 
     return render_template('exam.html', pid=pid, judges=judges, singles=singles,
                            task=task, task_record=task_record,
+                           started_at=paper['started_at'],
                            remain_sec=remain_sec, is_practice=is_practice)
 
 
