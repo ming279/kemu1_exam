@@ -31,10 +31,10 @@
   </div>
 </div>
 
-<!-- C11 学习热力图（近 12 周每天作答量） -->
+<!-- C11 学习热力图（近 12 周打卡，GitHub 贡献图风格） -->
 <div class="card chart-card">
   <h3>🔥 学习热力图（近 12 周打卡）</h3>
-  <div id="chart-heat" style="height:180px;"></div>
+  <div class="gh-heatmap" id="gh-heatmap"></div>
 </div>
 
 <!-- C12 成就徽章墙 -->
@@ -169,25 +169,106 @@
     });
   }
 
-  // 0.6 C11 学习热力图（GitHub 打卡风格：7 行 × 12 周）
-  var elHeat = document.getElementById('chart-heat');
-  if (elHeat) {
-    var maxCnt = Math.max.apply(null, heatList.map(function(d){ return d[1]; }).concat([1]));
-    var cH = echarts.init(elHeat); charts.push(cH);
-    cH.setOption({
-      tooltip:{ formatter:function(p){ return p.value[0] + '<br>作答 ' + p.value[1] + ' 题'; } },
-      visualMap:{ show:false, min:0, max:maxCnt, inRange:{color:['#ebedf0','#9be9a8','#40c463','#216e39']} },
-      calendar:{ cellSize:[13,13], range:(function(){
-          var a = heatList[0][0].split('-'), b = heatList[heatList.length-1][0].split('-');
-          return [a.join('-'), b.join('-')];
-        })(),
-        orient:'horizontal', itemStyle:{color:'#fff', borderColor:'#e5e7eb', borderWidth:1},
-        yearLabel:{show:false}, monthLabel:{fontSize:10},
-        dayLabel:{names:['日','一','二','三','四','五','六'], fontSize:10} },
-      series:[{ type:'heatmap', coordinateSystem:'calendar',
-        data: heatList.map(function(d){ return [d[0], d[1]]; }) }]
+  // 0.6 C11 学习热力图（GitHub 贡献图风格：DOM 方格，每列一周 × 7 行）
+  (function () {
+    var box = document.getElementById('gh-heatmap');
+    if (!box || !heatList.length) return;
+    var dataMap = {};
+    heatList.forEach(function (d) { dataMap[d[0]] = d[1]; });
+    var MONTHS = ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'];
+    var DOW = ['日','一','二','三','四','五','六'];
+    function fmt(dt) {
+      var m = ('0' + (dt.getMonth() + 1)).slice(-2), d = ('0' + dt.getDate()).slice(-2);
+      return dt.getFullYear() + '-' + m + '-' + d;
+    }
+    // 作答数分级：0 灰，1-2 / 3-5 / 6-9 / 10+ 四级绿
+    function levelOf(c) {
+      if (!c) return 0;
+      if (c < 3) return 1;
+      if (c < 6) return 2;
+      if (c < 10) return 3;
+      return 4;
+    }
+    var first = new Date(heatList[0][0] + 'T00:00:00');
+    var last = new Date(heatList[heatList.length - 1][0] + 'T00:00:00');
+    // 起始日对齐到所在周的周日，保证每列是完整一周
+    var cursor = new Date(first);
+    cursor.setDate(first.getDate() - first.getDay());
+    var weeks = [];
+    while (cursor <= last) {
+      var col = [];
+      for (var r = 0; r < 7; r++) {
+        var key = fmt(cursor);
+        if (key in dataMap) {
+          col.push({ date: key, cnt: dataMap[key], month: cursor.getMonth() });
+        } else {
+          col.push(null);  // 对齐填充/未来日期
+        }
+        cursor.setDate(cursor.getDate() + 1);
+      }
+      weeks.push(col);
+    }
+
+    // 月份标签行（每周一个槽，月份变化的周显示月份名）
+    var monthRow = document.createElement('div');
+    monthRow.className = 'gh-months';
+    weeks.forEach(function (w, wi) {
+      var slot = document.createElement('div');
+      slot.className = 'gh-month-slot';
+      var firstDay = w[0] || w[1] || w[2] || w[3] || w[4] || w[5] || w[6];
+      if (firstDay) {
+        var prev = null;
+        for (var k = wi - 1; k >= 0 && !prev; k--) {
+          prev = weeks[k][0] || weeks[k][1] || weeks[k][2] || weeks[k][3] ||
+                 weeks[k][4] || weeks[k][5] || weeks[k][6];
+        }
+        if (!prev || prev.month !== firstDay.month) slot.textContent = MONTHS[firstDay.month];
+      }
+      monthRow.appendChild(slot);
     });
-  }
+
+    // 主体：左侧星期标签 + 右侧周列
+    var body = document.createElement('div');
+    body.className = 'gh-body';
+    var dow = document.createElement('div');
+    dow.className = 'gh-dow';
+    DOW.forEach(function (name, i) {
+      var s = document.createElement('div');
+      s.className = 'gh-dow-cell';
+      s.textContent = (i === 1 || i === 3 || i === 5) ? name : '';
+      dow.appendChild(s);
+    });
+    var grid = document.createElement('div');
+    grid.className = 'gh-weeks';
+    weeks.forEach(function (w) {
+      var col = document.createElement('div');
+      col.className = 'gh-week';
+      w.forEach(function (cell) {
+        var c = document.createElement('div');
+        if (cell) {
+          c.className = 'gh-cell lvl' + levelOf(cell.cnt);
+          c.title = cell.date + '　作答 ' + cell.cnt + ' 题';
+        } else {
+          c.className = 'gh-cell gh-empty';
+        }
+        col.appendChild(c);
+      });
+      grid.appendChild(col);
+    });
+    body.appendChild(dow);
+    body.appendChild(grid);
+
+    // 图例：少 → 多
+    var legend = document.createElement('div');
+    legend.className = 'gh-legend';
+    legend.innerHTML = '<span>少</span>' +
+      [0,1,2,3,4].map(function (l) { return '<i class="gh-cell lvl' + l + '"></i>'; }).join('') +
+      '<span>多</span>';
+
+    box.appendChild(monthRow);
+    box.appendChild(body);
+    box.appendChild(legend);
+  })();
 
   // 1. 练习正确率仪表盘
   var c1 = echarts.init(document.getElementById('chart-myacc'));
