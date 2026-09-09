@@ -163,13 +163,13 @@ body.dark .replay-chip.none { background:#475569; }
 /* ---- C11 GitHub 风格贡献热力图（DOM 方格） ---- */
 .gh-heatmap { overflow-x:auto; padding:6px 2px 2px; }
 .gh-months { display:flex; margin-left:26px; margin-bottom:4px; }
-.gh-month-slot { flex:none; width:15px; font-size:11px; line-height:1; color:#6b7280; white-space:nowrap; }
+.gh-month-slot { flex:none; width:14px; font-size:11px; line-height:1; color:#6b7280; white-space:nowrap; }
 .gh-body { display:flex; align-items:flex-start; }
 .gh-dow { flex:none; width:22px; margin-right:4px; }
-.gh-dow-cell { height:12px; margin-bottom:3px; font-size:10px; line-height:12px; color:#6b7280; }
+.gh-dow-cell { height:11px; margin-bottom:3px; font-size:10px; line-height:11px; color:#6b7280; }
 .gh-weeks { display:flex; }
 .gh-week { flex:none; display:flex; flex-direction:column; margin-right:3px; }
-.gh-cell { width:12px; height:12px; border-radius:2px; margin-bottom:3px; background:#ebedf0;
+.gh-cell { width:11px; height:11px; border-radius:2px; margin-bottom:3px; background:#ebedf0;
   box-shadow: inset 0 0 0 1px rgba(27,31,35,.05); }
 .gh-week .gh-cell:last-child { margin-bottom:0; }
 .gh-dow-cell:last-child { margin-bottom:0; }

@@ -31,9 +31,9 @@
   </div>
 </div>
 
-<!-- C11 学习热力图（近 12 周打卡，GitHub 贡献图风格） -->
+<!-- C11 学习热力图（近 12 个月打卡，GitHub 贡献图风格） -->
 <div class="card chart-card">
-  <h3>🔥 学习热力图（近 12 周打卡）</h3>
+  <h3>🔥 学习热力图（近 12 个月打卡）</h3>
   <div class="gh-heatmap" id="gh-heatmap"></div>
 </div>
 
@@ -222,7 +222,12 @@
           prev = weeks[k][0] || weeks[k][1] || weeks[k][2] || weeks[k][3] ||
                  weeks[k][4] || weeks[k][5] || weeks[k][6];
         }
-        if (!prev || prev.month !== firstDay.month) slot.textContent = MONTHS[firstDay.month];
+        if (!prev || prev.month !== firstDay.month) {
+          var label = MONTHS[firstDay.month];
+          // 每年 1 月处带上年份，区分跨年（短格式防与 2 月标签重叠）
+          if (firstDay.month === 0) label = "'" + firstDay.date.slice(2, 4) + ' ' + label;
+          slot.textContent = label;
+        }
       }
       monthRow.appendChild(slot);
     });
