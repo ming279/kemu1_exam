@@ -1,28 +1,16 @@
 {% extends 'base.html' %}
+{% block title %}我的任务{% endblock %}
 {% block content %}
-<h2>欢迎，{{ cur_user.username }}</h2>
-<div class="card grid">
-  <div><div class="num">{{ stats.total }}</div>题库总题数</div>
-  <div><div class="num">{{ stats.users }}</div>注册用户</div>
-  <div><div class="num">{{ stats.papers }}</div>已完成考试</div>
-  <div><div class="num">{{ stats.my_wrong }}</div>我的未掌握错题</div>
-</div>
+<h2>📋 我的任务</h2>
+
 <div class="card">
-  <h3>开始学习</h3>
-  <p>模拟考试每次随机抽取 <b>60 道单选 + 40 道判断</b> 共 100 题，交卷后自动判分并计入错题本。</p>
-  <form method="post" action="{{ url_for('exam_start') }}" class="inline">
-    <button class="btn" type="submit">开始模拟考试</button>
-  </form>
-  <a class="btn secondary" href="{{ url_for('practice_home') }}">练习（随机/专项/错题）</a>
-</div>
-{% if cur_user.role == 'student' %}
-{% if my_tasks %}
-<div class="card">
-  <h3>待完成任务（{{ my_tasks|length }}）</h3>
-  <p class="muted">老师布置的任务，完成后计入成绩。</p>
+  <h3>待完成 / 进行中（{{ pending|length }}）</h3>
+  {% if not pending %}
+  <p class="muted">暂无待完成的任务，老师发布新任务后会出现在这里。</p>
+  {% else %}
   <table>
     <tr><th>任务标题</th><th>题型分布</th><th>模式</th><th>用途</th><th>时限</th><th>我的状态</th><th>操作</th></tr>
-    {% for t in my_tasks %}
+    {% for t in pending %}
     <tr>
       <td><b>{{ t.title }}</b><br><span class="muted">发布：{{ t.created_at }}</span></td>
       <td>判断 {{ t.judge_count }} + 单选 {{ t.single_count }}</td>
@@ -41,16 +29,21 @@
     </tr>
     {% endfor %}
   </table>
+  {% endif %}
 </div>
-{% endif %}
-{% if my_done_tasks %}
+
 <div class="card">
-  <h3>已完成任务（{{ my_done_tasks|length }}）<a class="btn small secondary" href="{{ url_for('my_tasks_page') }}" style="float:right;">我的任务页</a></h3>
+  <h3>已完成（{{ done|length }}）</h3>
+  {% if not done %}
+  <p class="muted">还没有完成过的任务。</p>
+  {% else %}
+  <p class="muted">完成的任务随时可回看成绩单与答案解析；任务被老师关闭也不影响查看。</p>
   <table>
-    <tr><th>任务标题</th><th>模式</th><th>得分</th><th>用时</th><th>交卷时间</th><th>操作</th></tr>
-    {% for t in my_done_tasks %}
+    <tr><th>任务标题</th><th>题型分布</th><th>模式</th><th>得分</th><th>用时</th><th>交卷时间</th><th>操作</th></tr>
+    {% for t in done %}
     <tr>
       <td><b>{{ t.title }}</b>{% if t.task_status == 'closed' %} <span class="muted">（任务已关闭）</span>{% endif %}</td>
+      <td>判断 {{ t.judge_count }} + 单选 {{ t.single_count }}</td>
       <td>{{ '考试' if t.mode == 'exam' else '练习' }}</td>
       <td><b class="tag-ok">{{ t.score }}</b> 分</td>
       <td>{% if t.used_sec %}{{ t.used_sec // 60 }}分{{ t.used_sec % 60 }}秒{% else %}—{% endif %}</td>
@@ -59,7 +52,6 @@
     </tr>
     {% endfor %}
   </table>
+  {% endif %}
 </div>
-{% endif %}
-{% endif %}
 {% endblock %}
