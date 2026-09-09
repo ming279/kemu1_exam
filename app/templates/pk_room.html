@@ -170,6 +170,14 @@
   pointer-events: none;
   z-index: 1600;
 }
+/* C17 房间码展示 */
+.room-code-box { margin-top:14px; display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+  background:#f0f7ff; border:1px dashed var(--brand); border-radius:10px; padding:12px 16px; }
+.room-code-box .rc-label { font-size:14px; color:#374151; }
+.room-code-box .rc-num { font-size:26px; letter-spacing:4px; color:var(--brand); font-weight:800; }
+.rc-chip { background:#eef2ff; border:1px solid #c7d2fe; color:#4338ca; border-radius:14px;
+  padding:2px 10px; font-size:13px; font-weight:700; cursor:pointer; letter-spacing:1px; }
+.rc-chip:hover { background:#e0e7ff; }
 </style>
 
 <div id="opp-banner" style="display:none;position:fixed;top:70px;left:50%;transform:translateX(-50%);z-index:999;align-items:center;gap:10px;background:#7f1d1d;color:#fff;padding:10px 18px;border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.35);">
@@ -181,6 +189,7 @@
   <div class="pk-track" id="pk-track">
     <canvas id="race-canvas"></canvas>
     <button class="btn-mute" id="btn-mute" title="音效开关">🔊</button>
+    <div id="watch-badge" style="position:absolute;top:8px;left:8px;z-index:9;display:none;background:rgba(0,0,0,.45);color:#fff;padding:4px 10px;border-radius:14px;font-size:13px;">👀 <span id="watch-n">0</span> 人在看</div>
   </div>
 
   <!-- 右侧：题目 60% -->
@@ -190,6 +199,12 @@
       <h2>🏎️ {{ my_name }} VS {{ opp_name }}</h2>
       <p class="muted">10 题同题竞速（判断/单选按发起方配置），答对 +1 分；抢答答错送对方 1 分并立即跳下一题！每题 {{ q_time }} 秒。连续答对触发 COMBO 氮气加速！</p>
       <div id="ready-status" class="muted">等待对方加入房间…</div>
+      <div class="room-code-box">
+        <span class="rc-label">🔑 房间码</span>
+        <b class="rc-num" id="room-code">{{ code }}</b>
+        <button class="btn small" type="button" id="btn-copy-code">📋 复制</button>
+        <span class="muted" style="font-size:12px;">同学可在「PK挑战」页输入房间码围观</span>
+      </div>
       <div style="margin-top:16px;display:flex;gap:12px;align-items:center;">
         <button class="btn" id="btn-ready" style="font-size:18px; padding:12px 32px;">我准备好了</button>
         <button class="btn" id="btn-exit" style="background:#9ca3af;">退出房间</button>
@@ -199,7 +214,9 @@
     <!-- 答题阶段 -->
     <div class="card" id="play-panel" style="display:none;">
       <div style="display:flex; justify-content:space-between; align-items:center;">
-        <h3 style="margin:0;">第 <span id="q-idx">1</span> / 10 题</h3>
+        <h3 style="margin:0;">第 <span id="q-idx">1</span> / 10 题
+          <button class="rc-chip" id="rc-chip" type="button" title="点击复制房间码">🔑 {{ code }}</button>
+        </h3>
         <div style="display:flex;align-items:center;gap:10px;">
           <div class="q-timer" id="q-timer">{{ q_time }}</div>
           <button class="btn" id="btn-exit-play" style="background:#9ca3af;padding:6px 14px;">退出</button>
@@ -971,6 +988,23 @@ function leaveRoom() {
   socket.emit('pk_leave', {pid: PID});
   setTimeout(function(){ location.href = '/pk'; }, 1200);
 }
+
+// C17 房间码一键复制（等待面板按钮 + 答题区小徽章共用）
+function copyRoomCode(btn) {
+  var code = document.getElementById('room-code').textContent.trim();
+  function ok() {
+    var old = btn.textContent;
+    btn.textContent = '✅ 已复制';
+    setTimeout(function(){ btn.textContent = old; }, 1500);
+  }
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(code).then(ok).catch(function(){ window.prompt('复制房间码：', code); });
+  } else {
+    window.prompt('复制房间码：', code);
+  }
+}
+document.getElementById('btn-copy-code').addEventListener('click', function(){ copyRoomCode(this); });
+document.getElementById('rc-chip').addEventListener('click', function(){ copyRoomCode(this); });
 document.getElementById('btn-exit').addEventListener('click', leaveRoom);
 document.getElementById('btn-exit-play').addEventListener('click', leaveRoom);
 
