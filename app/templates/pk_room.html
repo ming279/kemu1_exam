@@ -976,9 +976,14 @@ function loop(ts){
 requestAnimationFrame(loop);
 
 /* ===================== Socket 事件 ===================== */
+var myReadySent = false;   // 本端是否点过准备（断线重连后据此补报）
 socket.on('connect', function() {
   // C14 观战者走只读通道，玩家走对局通道
   socket.emit(IS_WATCHER ? 'watch_join' : 'pk_join', {pid: PID});
+  // 重连后补报准备，避免服务端清理了 ready 而本端按钮已灰（卡死无法开局）
+  if (!IS_WATCHER && myReadySent) {
+    socket.emit('pk_ready', {pid: PID});
+  }
   if (IS_WATCHER) {
     document.getElementById('watch-badge').style.display = 'block';
     document.getElementById('ready-status').textContent = '👀 观战模式：等待对局开始…';
@@ -995,21 +1000,39 @@ socket.on('watch_count', function (d) {
 });
 
 socket.on('room_state', function(d) {
-  var readyCount = d.players.filter(function(p){return p.ready;}).length;
-  document.getElementById('ready-status').textContent = IS_WATCHER
-    ? '👀 观战中 · 双方准备 ' + readyCount + '/2'
-    : '准备状态：' + readyCount + '/2 人已准备';
+  var players = d.players || [];
+  var readyCount = players.filter(function(p){return p.ready;}).length;
+  var statusEl = document.getElementById('ready-status');
+  if (IS_WATCHER) {
+    statusEl.textContent = '👀 观战中 · 双方准备 ' + readyCount + '/2';
+  } else {
+    // 以服务端状态为准渲染本端按钮（重连/补报后可自愈，避免按钮已灰但服务端没记录）
+    var me = players.filter(function(p){return String(p.uid) === String(MY_UID);})[0];
+    var btn = document.getElementById('btn-ready');
+    if (d.status === 'playing') {
+      btn.disabled = true;
+    } else if (me && me.ready) {
+      myReadySent = true;
+      btn.disabled = true;
+      btn.textContent = '已准备，等待对方…';
+      statusEl.textContent = '你已准备，等待对方…（' + readyCount + '/2）';
+    } else {
+      myReadySent = false;
+      btn.disabled = false;
+      btn.textContent = '我准备好了';
+      statusEl.textContent = readyCount >= 1
+        ? '⚡ 对方已准备，就等你了！'
+        : '准备状态：' + readyCount + '/2 人已准备';
+    }
+  }
   var b = document.getElementById('opp-banner');
   if (b) b.style.display = 'none';
-});
-
-socket.on('player_ready', function(d) {
-  document.getElementById('ready-status').textContent = '对方已准备，等你点准备！';
 });
 
 // 准备按钮 = 音频解锁点（浏览器要求用户交互后才能出声）
 document.getElementById('btn-ready').addEventListener('click', function() {
   SFX.init();
+  myReadySent = true;
   socket.emit('pk_ready', {pid: PID});
   this.disabled = true;
   this.textContent = '已准备，等待对方…';
