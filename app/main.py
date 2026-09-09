@@ -742,12 +742,53 @@ def _notify(uid, content, url=None):
 @app.route('/notifications')
 @login_required
 def notifications_page():
-    """通知列表（进入即全部标记已读）"""
+    """通知列表（进入即全部标记已读）。管理员额外看到发通知表单。"""
     rows = q("SELECT * FROM notification WHERE uid=%s ORDER BY id DESC LIMIT 50",
              (session['uid'],))
     execute("UPDATE notification SET is_read=1 WHERE uid=%s AND is_read=0",
             (session['uid'],))
-    return render_template('notifications.html', notis=rows)
+    students = None
+    me = current_user()
+    if me and me['role'] == 'admin':
+        students = q("SELECT id, username, real_name FROM `user` "
+                     "WHERE role='student' ORDER BY id")
+    return render_template('notifications.html', notis=rows, students=students)
+
+
+NOTI_LINKS = {
+    'exam': 'exam_start', 'practice': 'practice_home',
+    'tasks': 'my_tasks_page', 'pk': 'pk_lobby',
+}
+
+
+@app.route('/notifications/send', methods=['POST'])
+@login_required
+def notification_send():
+    """管理员群发/单发站内通知，并向在线学生实时推送铃铛提醒"""
+    me = current_user()
+    if not me or me['role'] != 'admin':
+        abort(403)
+    content = request.form.get('content', '').strip()
+    if not content:
+        flash('通知内容不能为空', 'danger')
+        return redirect(url_for('notifications_page'))
+    if request.form.get('target') == 'all':
+        uids = [r['id'] for r in q("SELECT id FROM `user` WHERE role='student'")]
+    else:
+        uids = [int(x) for x in request.form.getlist('uids')]
+    uids = [u for u in uids if u]
+    if not uids:
+        flash('请选择接收学生', 'danger')
+        return redirect(url_for('notifications_page'))
+    link_key = request.form.get('link', '')
+    link = url_for(NOTI_LINKS[link_key]) if link_key in NOTI_LINKS else None
+    online_sids = [sid for sid, suid in ONLINE_SIDS.items() if suid in uids]
+    for uid in uids:
+        _notify(uid, content, link)
+    for sid in online_sids:
+        socketio.emit('new_notification', {'content': content[:60]}, room=sid)
+    flash(f'通知已发送给 {len(uids)} 名学生', 'success')
+    return redirect(url_for('notifications_page'))
 
 
 # ---------------- stats 模块 ----------------

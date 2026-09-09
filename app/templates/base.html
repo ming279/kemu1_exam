@@ -37,6 +37,43 @@
   {% block content %}{% endblock %}
 </div>
 {% block scripts %}{% endblock %}
+{% if cur_user %}
+<script src="{{ url_for('static', filename='socket.io.min.js') }}"></script>
+<script>
+/* 管理员站内通知实时推送：铃铛红点 + 右下角弹窗 */
+(function () {
+  try {
+    var sock = io();
+    sock.on('new_notification', function (d) {
+      var bell = document.getElementById('nav-bell');
+      if (bell) {
+        var dot = bell.querySelector('.bell-dot');
+        if (dot) { dot.textContent = parseInt(dot.textContent || '0') + 1; }
+        else {
+          dot = document.createElement('span');
+          dot.className = 'bell-dot'; dot.textContent = '1';
+          bell.appendChild(dot);
+        }
+      }
+      var t = document.createElement('div');
+      t.className = 'noti-toast';
+      var icon = document.createTextNode('🔔 ');
+      t.appendChild(icon);
+      var span = document.createElement('span');
+      span.textContent = d.content;
+      t.appendChild(span);
+      t.onclick = function () { location.href = '{{ url_for("notifications_page") }}'; };
+      document.body.appendChild(t);
+      requestAnimationFrame(function () { t.classList.add('show'); });
+      setTimeout(function () {
+        t.classList.remove('show');
+        setTimeout(function () { t.remove(); }, 400);
+      }, 4500);
+    });
+  } catch (e) { /* socket 不可用时静默降级，刷新后仍可见通知 */ }
+})();
+</script>
+{% endif %}
 <script>
 /* C23 深色模式：localStorage 记忆，全站生效 */
 (function () {
