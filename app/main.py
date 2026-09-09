@@ -626,17 +626,14 @@ def stats():
 
 
 def _paper_sources(papers):
-    """从试卷列表统计来源分类：模拟考试 + 各任务名，模拟考试排最前"""
-    counts = {}
-    for p in papers:
-        src = p['task_title'] or '模拟考试'
-        counts[src] = counts.get(src, 0) + 1
+    """来源大类统计：模拟考试 / 任务（具体任务名在来源列显示）"""
+    n_mock = sum(1 for p in papers if not p['task_title'])
+    n_task = len(papers) - n_mock
     sources = []
-    if counts.get('模拟考试'):
-        sources.append(('模拟考试', counts['模拟考试']))
-    for src, n in counts.items():
-        if src != '模拟考试':
-            sources.append((src, n))
+    if n_mock:
+        sources.append(('模拟考试', n_mock))
+    if n_task:
+        sources.append(('任务', n_task))
     return sources
 
 

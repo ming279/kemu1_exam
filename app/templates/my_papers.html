@@ -20,7 +20,7 @@
   <table id="papers-table">
     <tr><th>开考时间</th><th>来源</th><th>题数</th><th>得分</th><th>状态</th><th>提交时间</th><th>操作</th></tr>
     {% for p in papers %}
-    <tr class="paper-row" data-src="{{ p.task_title or '模拟考试' }}">
+    <tr class="paper-row" data-cat="{{ '任务' if p.task_title else '模拟考试' }}">
       <td>{{ p.started_at or '—' }}</td>
       <td>{{ p.task_title or '模拟考试' }}</td>
       <td>{{ p.total_count }}</td>
@@ -47,9 +47,9 @@ document.querySelectorAll('.src-tab').forEach(function (btn) {
   btn.addEventListener('click', function () {
     document.querySelectorAll('.src-tab').forEach(function (b) { b.classList.remove('active'); });
     btn.classList.add('active');
-    var src = btn.dataset.src, shown = 0;
+    var cat = btn.dataset.src, shown = 0;
     document.querySelectorAll('.paper-row').forEach(function (row) {
-      var show = src === '__ALL__' || row.dataset.src === src;
+      var show = cat === '__ALL__' || row.dataset.cat === cat;
       row.style.display = show ? '' : 'none';
       if (show) shown++;
     });
