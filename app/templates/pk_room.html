@@ -24,6 +24,32 @@
 .emoji-btn:hover { transform:scale(1.15); }
 .emoji-pop { position:fixed; font-size:36px; pointer-events:none; z-index:200; animation:emojiFly 1.2s ease-out forwards; }
 @keyframes emojiFly { 0%{opacity:1; transform:translateY(0) scale(.5);} 100%{opacity:0; transform:translateY(-120px) scale(1.4);} }
+
+/* 快捷喊话菜单 */
+#taunt-menu { display:none; position:absolute; bottom:52px; left:0; z-index:30;
+  background:var(--card); border:1px solid var(--line); border-radius:10px;
+  box-shadow:0 8px 24px rgba(0,0,0,.25); padding:6px; min-width:180px; }
+#taunt-menu.show { display:block; }
+#taunt-menu button { display:block; width:100%; text-align:left; background:none; border:none;
+  padding:8px 12px; font-size:14px; cursor:pointer; border-radius:6px; color:inherit; white-space:nowrap; }
+#taunt-menu button:hover { background:#eff6ff; }
+body.dark #taunt-menu button:hover { background:#1e3a5f; }
+
+/* 赛道内聊天气泡流 */
+#chat-flow { position:absolute; left:8px; right:8px; bottom:46px; z-index:8;
+  display:flex; flex-direction:column-reverse; gap:5px; pointer-events:none; }
+.chat-bubble { align-self:flex-start; max-width:88%; background:rgba(8,12,28,.72);
+  color:#f1f5f9; border-radius:10px; padding:5px 10px; font-size:13px; line-height:1.4;
+  border-left:3px solid #94a3b8; animation:chatIn .25s ease-out; word-break:break-all; }
+.chat-bubble b { font-weight:700; }
+.chat-bubble.role-c { border-left-color:#ef4444; }
+.chat-bubble.role-c b { color:#fca5a5; }
+.chat-bubble.role-o { border-left-color:#3b82f6; align-self:flex-end; }
+.chat-bubble.role-o b { color:#93c5fd; }
+.chat-bubble.role-watcher { border-left-color:#a78bfa; background:rgba(30,20,50,.72); }
+.chat-bubble.role-watcher b { color:#c4b5fd; }
+@keyframes chatIn { from { opacity:0; transform:translateY(8px);} to { opacity:1; transform:translateY(0);} }
+.chat-bubble.fade { opacity:0; transition:opacity .5s; }
 .feedback-pop { position:fixed; top:40%; left:50%; transform:translate(-50%,-50%); font-size:80px; font-weight:900; pointer-events:none; z-index:200; animation:popIn .8s ease-out forwards; }
 @keyframes popIn { 0%{opacity:0; transform:translate(-50%,-50%) scale(.3);} 40%{opacity:1; transform:translate(-50%,-50%) scale(1.2);} 100%{opacity:0; transform:translate(-50%,-50%) scale(1);} }
 .shake { animation:shake .4s; }
@@ -190,6 +216,7 @@
     <canvas id="race-canvas"></canvas>
     <button class="btn-mute" id="btn-mute" title="音效开关">🔊</button>
     <div id="watch-badge" style="position:absolute;top:8px;left:8px;z-index:9;display:none;background:rgba(0,0,0,.45);color:#fff;padding:4px 10px;border-radius:14px;font-size:13px;">👀 <span id="watch-n">0</span> 人在看</div>
+    <div id="chat-flow"></div>
   </div>
 
   <!-- 右侧：题目 60% -->
@@ -225,13 +252,6 @@
       </div>
       <div style="margin:16px 0; font-size:17px; font-weight:600;" id="q-stem"></div>
       <div id="q-options"></div>
-      <div class="emoji-bar">
-        <button class="emoji-btn" data-e="😊">😊</button>
-        <button class="emoji-btn" data-e="😂">😂</button>
-        <button class="emoji-btn" data-e="😤">😤</button>
-        <button class="emoji-btn" data-e="👍">👍</button>
-        <button class="emoji-btn" data-e="🎉">🎉</button>
-      </div>
     </div>
 
     <!-- 结果阶段（旧卡片保留但默认隐藏，覆盖层控制展示） -->
@@ -242,6 +262,26 @@
       </div>
       <p class="muted" id="result-detail"></p>
       <a href="{{ url_for('pk_lobby') }}" class="btn">返回大厅</a>
+    </div>
+
+    <!-- 快捷互动栏：等待/答题/结算全程可用，玩家与观战者均可发 -->
+    <div class="card" style="padding:12px 16px;">
+      <div class="emoji-bar" style="position:relative;margin-top:0;">
+        <button class="emoji-btn" data-e="😊">😊</button>
+        <button class="emoji-btn" data-e="😂">😂</button>
+        <button class="emoji-btn" data-e="😤">😤</button>
+        <button class="emoji-btn" data-e="👍">👍</button>
+        <button class="emoji-btn" data-e="🎉">🎉</button>
+        <button class="emoji-btn" id="btn-taunt" title="快捷喊话"
+                style="width:auto;border-radius:22px;padding:0 14px;font-size:15px;">💬 喊话</button>
+        <div id="taunt-menu">
+          <button type="button" data-t="我要超你了，小心">🔥 我要超你了，小心</button>
+          <button type="button" data-t="就这还想超我">😏 就这还想超我</button>
+          <button type="button" data-t="再练练吧">💪 再练练吧</button>
+          <button type="button" data-t="等等我">⏳ 等等我</button>
+          <button type="button" data-t="加油">🎉 加油</button>
+        </div>
+      </div>
     </div>
   </div>
 </div>
@@ -1214,26 +1254,66 @@ function popFeedback(text, color) {
   setTimeout(function(){ div.remove(); }, 800);
 }
 
-// 表情包（观战者不参与，服务端也会拒绝）
-var emojiBar = document.querySelector('.emoji-bar');
-if (IS_WATCHER && emojiBar) emojiBar.style.display = 'none';
-document.querySelectorAll('.emoji-btn').forEach(function(b) {
+/* ---- 快捷互动：表情 + 预设喊话（玩家与观战者均可，全房间可见） ---- */
+var chatCdUntil = 0;   // 发送冷却，防刷屏
+function chatCdOk() {
+  var now = Date.now();
+  if (now < chatCdUntil) return false;
+  chatCdUntil = now + 1500;
+  return true;
+}
+// 表情
+document.querySelectorAll('.emoji-btn[data-e]').forEach(function(b) {
   b.addEventListener('click', function() {
-    var e = this.dataset.e;
-    socket.emit('pk_emoji', {pid: PID, emoji: e});
-    showEmoji(e, true);
+    if (!chatCdOk()) return;
+    socket.emit('pk_chat', {pid: PID, kind: 'emoji', value: this.dataset.e});
   });
 });
-socket.on('emoji', function(d) { showEmoji(d.emoji, false); });
-function showEmoji(e, mine) {
+// 喊话菜单
+var tauntBtn = document.getElementById('btn-taunt');
+var tauntMenu = document.getElementById('taunt-menu');
+tauntBtn.addEventListener('click', function(e) {
+  e.stopPropagation();
+  tauntMenu.classList.toggle('show');
+});
+document.addEventListener('click', function(e) {
+  if (!tauntMenu.contains(e.target)) tauntMenu.classList.remove('show');
+});
+tauntMenu.querySelectorAll('button').forEach(function(b) {
+  b.addEventListener('click', function() {
+    tauntMenu.classList.remove('show');
+    if (!chatCdOk()) return;
+    socket.emit('pk_chat', {pid: PID, kind: 'text', value: this.dataset.t});
+  });
+});
+// 接收广播（自己发的也经广播回执，保证各端位置/身份一致）
+socket.on('pk_chat', function(d) {
+  if (d.kind === 'emoji') showEmoji(d.value, d.role);
+  else if (d.kind === 'text') addChatBubble(d.role, d.name, d.value);
+});
+function showEmoji(e, role) {
   var div = document.createElement('div');
   div.className = 'emoji-pop';
   div.textContent = e;
-  div.style.right = mine ? '20px' : 'auto';
-  div.style.left = mine ? 'auto' : '45%';
-  div.style.bottom = '30%';
+  div.style.bottom = '32%';
+  // c=红车左道 / o=蓝车右道 / watcher=赛道中上方
+  div.style.left = role === 'c' ? '16%' : role === 'o' ? '33%' : '25%';
   document.body.appendChild(div);
   setTimeout(function(){ div.remove(); }, 1200);
+}
+function addChatBubble(role, name, text) {
+  var flow = document.getElementById('chat-flow');
+  var div = document.createElement('div');
+  div.className = 'chat-bubble role-' + role;
+  var who = document.createElement('b');
+  who.textContent = (role === 'watcher' ? '📣 观众 ' + name : name) + '：';
+  var msg = document.createElement('span');
+  msg.textContent = text;
+  div.appendChild(who); div.appendChild(msg);
+  flow.appendChild(div);
+  while (flow.children.length > 4) flow.removeChild(flow.firstChild);
+  setTimeout(function(){ div.classList.add('fade'); }, 4000);
+  setTimeout(function(){ div.remove(); }, 4600);
 }
 
 // 游戏结束：胜者冲线 + 全屏结算覆盖层 + 烟花/彩带雨
