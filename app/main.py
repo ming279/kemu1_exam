@@ -2086,6 +2086,47 @@ def _pk_room_key(pid):
     return f'pk_{pid}'
 
 
+def _pk_recent_qids(uids, games=3):
+    """两名玩家最近 games 场 PK 出过的题（抽题去重用）。
+    每人最多 games 场，故取 games*2 行覆盖双方。"""
+    recent = set()
+    rows = q(
+        "SELECT question_ids FROM pk_challenge "
+        "WHERE (challenger_uid=%s OR opponent_uid=%s "
+        "       OR challenger_uid=%s OR opponent_uid=%s) "
+        "ORDER BY id DESC LIMIT %s",
+        (uids[0], uids[0], uids[1], uids[1], games * 2))
+    for r in rows:
+        recent.update(int(x) for x in (r['question_ids'] or '').split(',') if x.strip())
+    return recent
+
+
+def _pk_pick_questions(judge_n, single_n, exclude=None):
+    """按题型随机抽题；exclude 中的近期题不抽。
+    排除后题池不足时自动放宽为全池随机，保证总能抽满。"""
+    exclude = set(exclude or ())
+
+    def _pick(qtype, n):
+        if n <= 0:
+            return []
+        if exclude:
+            ex = ','.join(str(i) for i in exclude)
+            ids = [r['id'] for r in q(
+                f"SELECT id FROM question WHERE qtype=%s AND id NOT IN ({ex}) "
+                f"ORDER BY RAND() LIMIT %s", (qtype, n))]
+            if len(ids) < n:    # 排除后不够 -> 放宽到全池
+                ids = [r['id'] for r in q(
+                    "SELECT id FROM question WHERE qtype=%s ORDER BY RAND() LIMIT %s",
+                    (qtype, n))]
+        else:
+            ids = [r['id'] for r in q(
+                "SELECT id FROM question WHERE qtype=%s ORDER BY RAND() LIMIT %s",
+                (qtype, n))]
+        return ids
+
+    return _pick('judge', judge_n) + _pick('single', single_n)
+
+
 @app.route('/pk')
 @login_required
 def pk_lobby():
@@ -2146,16 +2187,12 @@ def pk_challenge():
         flash('题型配置无效：判断题 + 单选题数量之和须等于 10', 'danger')
         return redirect(url_for('pk_lobby'))
 
-    judge_ids = [r['id'] for r in
-                 q(f"SELECT id FROM question WHERE qtype='judge' "
-                   f"ORDER BY RAND() LIMIT {judge_n}")] if judge_n else []
-    single_ids = [r['id'] for r in
-                  q(f"SELECT id FROM question WHERE qtype='single' "
-                    f"ORDER BY RAND() LIMIT {single_n}")] if single_n else []
-    if len(judge_ids) < judge_n or len(single_ids) < single_n:
+    # 抽题：随机抽判断题/单选题，避开双方最近 3 局出过的题
+    recent = _pk_recent_qids((session['uid'], opponent_id))
+    qids = _pk_pick_questions(judge_n, single_n, recent)
+    if len(qids) < PK_QUESTION_COUNT:
         flash('题库对应题型数量不足，无法PK', 'danger')
         return redirect(url_for('pk_lobby'))
-    qids = judge_ids + single_ids
     random.shuffle(qids)  # 判断/单选交错出场
 
     # C16 赛道皮肤（发起方选择）
@@ -2741,18 +2778,29 @@ def pk_rematch(data):
     emit('rematch_wait', {'n': len(rematch)}, room=key)
     if len(rematch) < 2:
         return
-    # 双方都同意：同题重洗，开新局
-    random.shuffle(room['questions'])
+    # 双方都同意：按相同题型配置重新抽新题（避开近 3 局 + 上一局原题），开新局
+    old = list(room['questions'])
+    type_rows = q(
+        "SELECT qtype, COUNT(*) c FROM question WHERE id IN (%s) GROUP BY qtype"
+        % ','.join(['%s'] * len(old)), old)
+    tcount = {r['qtype']: r['c'] for r in type_rows}
+    jn, sn = tcount.get('judge', 0), tcount.get('single', 0)
+    exclude = _pk_recent_qids((room['challenger'], room['opponent']))
+    exclude.update(old)   # 保证再战不与上一局重复
+    new_qids = _pk_pick_questions(jn, sn, exclude)
+    if len(new_qids) < len(old):    # 极端情况题池不足，退回旧题重洗
+        new_qids = list(old)
+    random.shuffle(new_qids)
     new_pid = execute(
         "INSERT INTO pk_challenge (challenger_uid, opponent_uid, question_ids, "
         "theme, status) VALUES (%s, %s, %s, %s, 'waiting')",
         (room['challenger'], room['opponent'],
-         ','.join(map(str, room['questions'])), room.get('theme') or 'day'))
+         ','.join(map(str, new_qids)), room.get('theme') or 'day'))
     PK_ROOMS[_pk_room_key(new_pid)] = {
         'challenger': room['challenger'],
         'opponent': room['opponent'],
         'status': 'waiting',
-        'questions': list(room['questions']),
+        'questions': new_qids,
         'current_q': -1,
         'scores': {room['challenger']: 0, room['opponent']: 0},
         'answers': {}, 'answered': {}, 'seq': {},
