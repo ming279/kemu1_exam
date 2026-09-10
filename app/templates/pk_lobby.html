@@ -118,6 +118,7 @@
 {% endblock %}
 
 {% block scripts %}
+{{ super() }}
 <script src="{{ url_for('static', filename='socket.io.min.js') }}"></script>
 <script>
 // 实时邀请：socket 推送秒级刷新 + 4 秒轮询兜底

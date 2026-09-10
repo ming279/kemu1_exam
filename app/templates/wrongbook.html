@@ -46,6 +46,7 @@
 {% endblock %}
 
 {% block scripts %}
+{{ super() }}
 <script>
 /* C18 AI 通俗讲解：优先返回缓存解析，否则调 LLM 生成 */
 function aiExplain(qid, btn) {

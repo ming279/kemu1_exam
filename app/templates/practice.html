@@ -62,6 +62,7 @@
 {% endblock %}
 
 {% block scripts %}
+{{ super() }}
 <script>
 var QID = {{ question.id }};
 var QTYPE = '{{ question.qtype }}';

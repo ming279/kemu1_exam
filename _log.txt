@@ -1,0 +1,85 @@
+﻿ * Serving Flask app 'main'
+ * Debug mode: on
+python : WARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server 
+instead.
+At line:15 char:2615
++ ... rvice MySQL80 2>$null; Start-Sleep 1; python app/main.py 2>&1 | Out-F ...
++                                           ~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (WARNING: This i...server instead.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5000
+ * Running on http://10.102.83.182:5000
+Press CTRL+C to quit
+ * Restarting with watchdog (windowsapi)
+ * Debugger is active!
+ * Debugger PIN: 654-475-656
+127.0.0.1 - - [10/Sep/2026 11:55:35] "POST /login HTTP/1.1" 302 -
+127.0.0.1 - - [10/Sep/2026 11:55:36] "GET / HTTP/1.1" 200 -
+ * Detected change in 'D:\\PythonDevdlop\\Lib\\site-packages\\pymysql\\cursors.py', reloading
+127.0.0.1 - - [10/Sep/2026 11:55:36] "GET /wrongbook HTTP/1.1" 500 -
+Traceback (most recent call last):
+  File "D:\PythonDevdlop\Lib\site-packages\flask\app.py", line 1536, in __call__
+    return self.wsgi_app(environ, start_response)
+           ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\w'j'm\AppData\Roaming\Python\Python314\site-packages\flask_socketio\__init__.py", line 42, in __call__
+    return super().__call__(environ, start_response)
+           ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\w'j'm\AppData\Roaming\Python\Python314\site-packages\engineio\middleware.py", line 74, in __call__
+    return self.wsgi_app(environ, start_response)
+           ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\PythonDevdlop\Lib\site-packages\flask\app.py", line 1514, in wsgi_app
+    response = self.handle_exception(e)
+  File "D:\PythonDevdlop\Lib\site-packages\flask\app.py", line 1511, in wsgi_app
+    response = self.full_dispatch_request()
+  File "D:\PythonDevdlop\Lib\site-packages\flask\app.py", line 919, in full_dispatch_request
+    rv = self.handle_user_exception(e)
+  File "D:\PythonDevdlop\Lib\site-packages\flask\app.py", line 917, in full_dispatch_request
+    rv = self.dispatch_request()
+  File "D:\PythonDevdlop\Lib\site-packages\flask\app.py", line 902, in dispatch_request
+    return self.ensure_sync(self.view_functions[rule.endpoint])(**view_args)  # type: ignore[no-any-return]
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+  File "C:\Users\w'j'm\Desktop\新建文件夹\app\main.py", line 114, in wrapper
+    return f(*args, **kwargs)
+  File "C:\Users\w'j'm\Desktop\新建文件夹\app\main.py", line 681, in wrongbook
+    sim_map = {it['id']: _similar_questions(it['id']) for it in items[:20]}
+                         ~~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "C:\Users\w'j'm\Desktop\新建文件夹\app\main.py", line 650, in _similar_questions
+    opts = q(f"SELECT question_id, label, content, is_correct FROM question_option "
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\w'j'm\Desktop\新建文件夹\app\main.py", line 75, in q
+    cur.execute(sql, args)
+    ~~~~~~~~~~~^^^^^^^^^^^
+  File "D:\PythonDevdlop\Lib\site-packages\pymysql\cursors.py", line 159, in execute
+    result = self._query(query)
+  File "D:\PythonDevdlop\Lib\site-packages\pymysql\cursors.py", line 330, in _query
+    conn.query(q)
+    ~~~~~~~~~~^^^
+  File "D:\PythonDevdlop\Lib\site-packages\pymysql\connections.py", line 582, in query
+    self._affected_rows = self._read_query_result(unbuffered=unbuffered)
+                          ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\PythonDevdlop\Lib\site-packages\pymysql\connections.py", line 847, in _read_query_result
+    result.read()
+    ~~~~~~~~~~~^^
+  File "D:\PythonDevdlop\Lib\site-packages\pymysql\connections.py", line 1245, in read
+    first_packet = self.connection._read_packet()
+  File "D:\PythonDevdlop\Lib\site-packages\pymysql\connections.py", line 803, in _read_packet
+    packet.raise_for_error()
+    ~~~~~~~~~~~~~~~~~~~~~~^^
+  File "D:\PythonDevdlop\Lib\site-packages\pymysql\protocol.py", line 219, in raise_for_error
+    err.raise_mysql_exception(self._data)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^
+  File "D:\PythonDevdlop\Lib\site-packages\pymysql\err.py", line 154, in raise_mysql_exception
+    raise errorclass(errno, errval, sqlstate=sqlstate)
+pymysql.err.ProgrammingError: (1146, "Table 'kemu1_exam.question_option' doesn't exist")
+ * Restarting with watchdog (windowsapi)
+ * Debugger is active!
+ * Debugger PIN: 654-475-656
+ * Detected change in "C:\\Users\\w'j'm\\Desktop\\新建文件夹\\app\\main.py", reloading
+ * Restarting with watchdog (windowsapi)
+ * Debugger is active!
+ * Debugger PIN: 654-475-656
+127.0.0.1 - - [10/Sep/2026 11:56:41] "POST /login HTTP/1.1" 302 -
+127.0.0.1 - - [10/Sep/2026 11:56:41] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [10/Sep/2026 11:56:42] "GET /wrongbook HTTP/1.1" 200 -

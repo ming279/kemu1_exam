@@ -39,6 +39,7 @@
 {% endblock %}
 
 {% block scripts %}
+{{ super() }}
 <script>
 var curIdx = 0;
 var total = {{ questions|length }};

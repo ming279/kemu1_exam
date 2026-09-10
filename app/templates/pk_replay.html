@@ -40,6 +40,7 @@
 {% endblock %}
 
 {% block scripts %}
+{{ super() }}
 <script>
 var STEPS = {{ steps|tojson }};
 var NAME_C = {{ rec.c_name|tojson }};

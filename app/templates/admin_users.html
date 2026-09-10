@@ -46,6 +46,7 @@
 {% endblock %}
 
 {% block scripts %}
+{{ super() }}
 <script>
 function confirmDelete(uname){
   return confirm('确定删除用户 ' + uname + ' 吗？\n'
