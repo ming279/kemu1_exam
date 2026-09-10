@@ -1,8 +1,36 @@
 {% extends 'base.html' %}
 {% block title %}题目管理{% endblock %}
 {% block content %}
-<h1>题目管理</h1>
-<p class="muted">共 {{ total }} 道题，每页 20 题。点击解析框可编辑，失焦自动保存；支持题干关键词 / 题号 / 分类 / 题型组合筛选。</p>
+<h1>题目管理 <a href="{{ url_for('admin_question_new') }}" class="btn" style="margin-left:12px;">＋ 新增题目</a></h1>
+<p class="muted">共 {{ total }} 道{{ '已删' if del_f == '1' else '' }}题，每页 20 题。点击解析框可编辑，失焦自动保存；"编辑"可修改题干/选项/分类/配图；删除为软删除，可从回收站恢复。</p>
+
+{% if pending_total %}
+<div class="card" style="border:1px solid #fdba74;background:#fffbeb;margin:1em 0;">
+  <h3 style="margin-top:0;">⚠ 待审核纠错上报（{{ pending_total }}）{% if pending_total > 20 %}<span class="muted" style="font-size:13px;">仅显示最新 20 条</span>{% endif %}</h3>
+  <table>
+    <tr><th>题目ID</th><th>题干</th><th>举报人</th><th>原因</th><th>时间</th><th>操作</th></tr>
+    {% for r in reports %}
+    <tr>
+      <td>{{ r.qid }}</td>
+      <td>{{ r.stem_short }}…</td>
+      <td>{{ r.real_name or r.username }}</td>
+      <td>{{ r.reason }}</td>
+      <td class="muted">{{ r.created_at }}</td>
+      <td style="white-space:nowrap;">
+        <a href="{{ url_for('admin_question_edit', qid=r.qid) }}" class="btn small">📝 去修正</a>
+        <form method="post" action="{{ url_for('admin_report_resolve', rid=r.id) }}" class="inline"
+              onsubmit="return confirm('已核对并处理该上报？（标记后将从列表消失并通知举报人）')">
+          <button class="btn small secondary" type="submit">✅ 标记处理</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  <p class="muted" style="margin-top:8px;">处理流程：点"去修正"进入题目编辑页修改题干/选项/配图 → 保存 → 回来点"标记处理"，举报人会收到站内回执。</p>
+</div>
+{% else %}
+<p class="muted" style="margin:1em 0;">✓ 暂无待审核纠错上报</p>
+{% endif %}
 
 <form method="get" class="search-bar" style="margin: 1em 0;flex-wrap:wrap;">
   <input type="text" name="q" value="{{ search }}" placeholder="搜索题干关键词或题号" class="search-input">
@@ -19,55 +47,51 @@
     <option value="{{ c.id }}" {{ 'selected' if cat_f == c.id|string }}>{{ c.label }}</option>
     {% endfor %}
   </select>
+  <select name="del" style="width:110px;padding:6px;">
+    <option value="" {{ 'selected' if del_f != '1' }}>正常题目</option>
+    <option value="1" {{ 'selected' if del_f == '1' }}>🗑 已删除</option>
+  </select>
   <button type="submit" class="btn">筛选</button>
-  {% if search or qtype_f or cat_f %}<a href="{{ url_for('admin_questions') }}" class="btn secondary">清除</a>{% endif %}
+  {% if search or qtype_f or cat_f or del_f %}<a href="{{ url_for('admin_questions') }}" class="btn secondary">清除</a>{% endif %}
 </form>
 
 <table>
-  <tr><th>ID</th><th>题型</th><th>题干摘要</th><th>答案解析</th></tr>
+  <tr><th>ID</th><th>题型</th><th>题干摘要</th><th>配图</th><th>答案解析</th><th>操作</th></tr>
   {% for r in rows %}
   <tr>
     <td>{{ r.id }}</td>
     <td>{{ {'judge':'判断题','single':'单选题','multi':'多选题'}.get(r.qtype, r.qtype) }}</td>
     <td>{{ r.stem_short }}…</td>
+    <td>{{ ('🖼 ' ~ r.img_n) if r.img_n else '—' }}</td>
     <td>
       <textarea class="explanation-input" data-qid="{{ r.id }}"
                 placeholder="暂无解析" rows="2" style="width:100%">{{ r.explanation or '' }}</textarea>
+    </td>
+    <td style="white-space:nowrap;">
+      <a href="{{ url_for('admin_question_edit', qid=r.id) }}" class="btn small">编辑</a>
+      {% if del_f == '1' %}
+      <form method="post" action="{{ url_for('admin_question_restore', qid=r.id) }}" class="inline"
+            onsubmit="return confirm('恢复题目 #{{ r.id }}？')">
+        <input type="hidden" name="from_trash" value="1">
+        <button class="btn small" type="submit">♻ 恢复</button>
+      </form>
+      {% else %}
+      <form method="post" action="{{ url_for('admin_question_delete', qid=r.id) }}" class="inline"
+            onsubmit="return confirm('删除题目 #{{ r.id }}？\n\n软删除：不进入任何抽题池，历史成绩不受影响，可从回收站恢复。')">
+        <button class="btn small secondary" type="submit">删除</button>
+      </form>
+      {% endif %}
     </td>
   </tr>
   {% endfor %}
 </table>
 
 <div class="pagination">
-  {% if page > 1 %}<a href="{{ url_for('admin_questions', page=page-1, q=search or none, qtype=qtype_f or none, cat=cat_f or none) }}">上一页</a>{% endif %}
+  {% set del_q = {'del': '1'} if del_f == '1' else {} %}
+  {% if page > 1 %}<a href="{{ url_for('admin_questions', page=page-1, q=search or none, qtype=qtype_f or none, cat=cat_f or none, **del_q) }}">上一页</a>{% endif %}
   <span>第 {{ page }} / {{ pages }} 页（共 {{ total }} 题）</span>
-  {% if page < pages %}<a href="{{ url_for('admin_questions', page=page+1, q=search or none, qtype=qtype_f or none, cat=cat_f or none) }}">下一页</a>{% endif %}
+  {% if page < pages %}<a href="{{ url_for('admin_questions', page=page+1, q=search or none, qtype=qtype_f or none, cat=cat_f or none, **del_q) }}">下一页</a>{% endif %}
 </div>
-
-{% if reports %}
-<div class="card" style="border:1px solid #fdba74;background:#fffbeb;">
-  <h3>⚠ 待审核纠错上报（{{ reports|length }}）</h3>
-  <table>
-    <tr><th>题目ID</th><th>题干</th><th>举报人</th><th>原因</th><th>时间</th><th>操作</th></tr>
-    {% for r in reports %}
-    <tr>
-      <td><a href="{{ url_for('admin_questions', q=r.qid|string) }}">{{ r.qid }}</a></td>
-      <td>{{ r.stem_short }}…</td>
-      <td>{{ r.real_name or r.username }}</td>
-      <td>{{ r.reason }}</td>
-      <td class="muted">{{ r.created_at }}</td>
-      <td>
-        <form method="post" action="{{ url_for('admin_report_resolve', rid=r.id) }}" class="inline"
-              onsubmit="return confirm('已核对并处理该上报？')">
-          <button class="btn small" type="submit">✅ 标记处理</button>
-        </form>
-      </td>
-    </tr>
-    {% endfor %}
-  </table>
-  <p class="muted" style="margin-top:8px;">处理流程：点击题目ID定位 → 核对题目 → 在上方解析框修正答案/解析 → 标记处理完成。</p>
-</div>
-{% endif %}
 
 <script>
 document.querySelectorAll('.explanation-input').forEach(function(ta) {
