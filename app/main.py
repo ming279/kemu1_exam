@@ -293,7 +293,8 @@ def my_tasks_page():
 @login_required
 def exam_start():
     """随机组卷：判断题 1-40 在前，单选题 41-100 在后（按题型分区展示）。
-    已有进行中的自由模拟考时直接恢复，防止误点导航新建试卷丢失作答。"""
+    已有进行中的自由模拟考时直接恢复，防止误点导航新建试卷丢失作答。
+    支持选限时 45 分钟（贴近真实考试）或不限时。"""
     existing = q(
         "SELECT id FROM exam_paper WHERE user_id=%s AND task_id IS NULL "
         "AND status='in_progress' ORDER BY id DESC LIMIT 1",
@@ -310,8 +311,13 @@ def exam_start():
                  f"ORDER BY RAND() LIMIT {EXAM_SINGLE_COUNT}")]
     ids = judges + singles
 
-    pid = execute("INSERT INTO exam_paper (user_id, total_count) VALUES (%s, %s)",
-                  (session['uid'], len(ids)))
+    # 限时模式：45 分钟 = 2700 秒，不限时则 NULL
+    time_limit = request.form.get('time_limit')
+    tl_sec = 2700 if time_limit == '45' else None
+
+    pid = execute("INSERT INTO exam_paper (user_id, total_count, time_limit_sec) "
+                  "VALUES (%s, %s, %s)",
+                  (session['uid'], len(ids), tl_sec))
     for seq, qid in enumerate(ids, 1):
         execute("INSERT INTO exam_detail (paper_id, question_id, seq_no) "
                 "VALUES (%s, %s, %s)", (pid, qid, seq))
@@ -336,30 +342,30 @@ def exam_page(pid):
     judges = [r for r in questions if r['qtype'] == 'judge']
     singles = [r for r in questions if r['qtype'] != 'judge']
 
-    # 任务模式：加载 task 信息和 task_record 状态
+    # 倒计时剩余秒数：任务考试模式 / 自由模拟考限时 两种来源
     task = None
     task_record = None
-    remain_sec = None        # 考试模式倒计时剩余秒数
-    is_practice = False      # 是否为练习模式任务
+    remain_sec = None
+    is_practice = False
     if paper.get('task_id'):
         task = q("SELECT * FROM task WHERE id=%s", (paper['task_id'],), one=True)
         task_record = q("SELECT * FROM task_record WHERE paper_id=%s",
                         (pid,), one=True)
         if task and task['mode'] == 'practice':
             is_practice = True
-        # 考试模式倒计时：剩余 = time_limit_sec - 已用时
         if task and task['time_limit_sec'] and task['mode'] == 'exam':
-            elapsed = 0
-            if task_record:
-                # 已用时 = now - start_time + 之前累计的 elapsed_sec
-                # （考试模式不暂停，elapsed_sec 通常为0）
-                elapsed_row = q(
-                    "SELECT TIMESTAMPDIFF(SECOND, start_time, NOW()) AS e "
-                    "FROM task_record WHERE id=%s", (task_record['id'],), one=True)
-                elapsed = elapsed_row['e'] if elapsed_row else 0
-            remain_sec = task['time_limit_sec'] - (elapsed or 0)
-            if remain_sec < 0:
-                remain_sec = 0
+            elapsed_row = q(
+                "SELECT TIMESTAMPDIFF(SECOND, start_time, NOW()) AS e "
+                "FROM task_record WHERE id=%s", (task_record['id'],), one=True)
+            remain_sec = task['time_limit_sec'] - (elapsed_row['e'] if elapsed_row else 0)
+    elif paper.get('time_limit_sec'):
+        # 自由模拟考限时：剩余 = time_limit_sec - (NOW - started_at)
+        elapsed = q(
+            "SELECT TIMESTAMPDIFF(SECOND, started_at, NOW()) AS e "
+            "FROM exam_paper WHERE id=%s", (pid,), one=True)
+        remain_sec = paper['time_limit_sec'] - (elapsed['e'] if elapsed else 0)
+    if remain_sec is not None and remain_sec < 0:
+        remain_sec = 0
 
     return render_template('exam.html', pid=pid, judges=judges, singles=singles,
                            task=task, task_record=task_record,

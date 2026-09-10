@@ -8,7 +8,7 @@
     <h3>答题卡</h3>
     <div class="muted">已答 <b id="ac-count">0</b> / {{ total }} 题</div>
 
-    {% if is_task and remain_sec is not none and remain_sec > 0 %}
+    {% if remain_sec is not none and remain_sec > 0 %}
     <div id="countdown-box" class="countdown-box">
       <div class="muted">剩余时间</div>
       <div id="countdown" class="countdown-num">--:--:--</div>
@@ -55,8 +55,10 @@
     <p class="muted">
       开考时间：{{ started_at }} ｜
       共 {{ total }} 题：判断题 {{ judges|length }} 题 + 选择题 {{ singles|length }} 题
-      {% if is_task %}｜ 模式：{{ '考试' if task.mode == 'exam' else '练习' }}
-      {% if task.time_limit_sec %}｜ 时限：{{ task.time_limit_sec // 60 }} 分钟{% endif %}{% endif %}
+      {% if is_task %}｜ 模式：{{ '考试' if task.mode == 'exam' else '练习' }}{% endif %}
+      {% if is_task and task.time_limit_sec %}｜ 时限：{{ task.time_limit_sec // 60 }} 分钟
+      {% elif remain_sec is not none and not is_task %}｜ 限时：45 分钟（真实考试节奏）
+      {% elif remain_sec is none and not is_task %}｜ 不限时{% endif %}
     </p>
     <form id="examForm" method="post" action="{{ url_for('exam_submit', pid=pid) }}">
       <input type="hidden" name="switch_count" id="switch-count-input" value="0">
