@@ -132,6 +132,20 @@ html { scroll-behavior:smooth; }
 .sim-list { margin:6px 0 0; padding-left:18px; font-size:13px; color:#4b5563; }
 .sim-list li { margin:2px 0; }
 
+/* ---- C19 相似题迷你练习卡片 ---- */
+.sim-cards { display:flex; flex-direction:column; gap:10px; margin-top:6px; }
+.sim-card { background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px; }
+.sim-card.answered { border-color:#94a3b8; background:#f8fafc; }
+.sim-stem { font-size:14px; font-weight:600; color:#1f2937; margin-bottom:8px; line-height:1.5; }
+.sim-stem .muted.small { font-size:12px; font-weight:400; }
+.sim-opt { display:block;width:100%;text-align:left;margin:4px 0;padding:8px 12px;
+  border:1.5px solid #d1d5db;border-radius:6px;background:#fff;cursor:pointer;font-size:13px;transition:all .15s; }
+.sim-opt:hover:not(:disabled) { border-color:#2563eb;background:#eff6ff; }
+.sim-opt:disabled { cursor:default; }
+.sim-opt-correct { border-color:#16a34a;background:#dcfce7;color:#166534;font-weight:600; }
+.sim-opt-wrong { border-color:#dc2626;background:#fee2e2;color:#991b1b; }
+.sim-feedback { margin-top:6px; font-size:13px; font-weight:600; }
+
 /* ---- C15 对局回放 ---- */
 .replay-stage { min-height:220px; }
 .replay-answers { display:flex; gap:16px; margin-top:12px; flex-wrap:wrap; }

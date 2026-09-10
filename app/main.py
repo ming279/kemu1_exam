@@ -615,7 +615,8 @@ def _stem_grams(s):
 
 
 def _similar_questions(qid, n=3):
-    """C19 相似题推荐：同题型优先同分类，2-gram Jaccard 取 top n"""
+    """C19 相似题推荐：同题型优先同分类，2-gram Jaccard 取 top n。
+    返回每道题的完整选项（含正确答案），供错题本内嵌迷你练习卡片用。"""
     base = q("SELECT id, stem, qtype, category_id FROM question WHERE id=%s",
              (qid,), one=True)
     if not base:
@@ -634,8 +635,26 @@ def _similar_questions(qid, n=3):
         if score >= 0.12:
             scored.append((score, c))
     scored.sort(key=lambda x: -x[0])
-    return [{'id': c['id'], 'stem': c['stem'], 'qtype': base['qtype'], 'sim': round(sc, 2)}
-            for sc, c in scored[:n]]
+    top = scored[:n]
+    if not top:
+        return []
+    ids = [c['id'] for _, c in top]
+    # 批量取选项
+    qmarks = ','.join(['%s'] * len(ids))
+    opts = q(f"SELECT question_id, label, content, is_correct FROM question_option "
+             f"WHERE question_id IN ({qmarks}) ORDER BY question_id, label", ids)
+    by_qid = {}
+    for o in opts:
+        by_qid.setdefault(o['question_id'], []).append(o)
+    result = []
+    for sc, c in top:
+        result.append({
+            'id': c['id'], 'stem': c['stem'], 'qtype': base['qtype'],
+            'sim': round(sc, 2),
+            'options': [{'label': o['label'], 'content': o['content'], 'is_correct': o['is_correct']}
+                        for o in by_qid.get(c['id'], [])],
+        })
+    return result
 
 
 @app.route('/wrongbook')

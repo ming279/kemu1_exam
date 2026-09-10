@@ -36,13 +36,24 @@
             onclick="reportQuestion({{ q.id }})">⚠ 举报有误</button>
   </div>
   {% if sim_map.get(q.id) %}
-  <div style="margin-top:10px;background:#f8fafc;border:1px solid var(--line);border-radius:8px;padding:8px 12px;">
-    <b style="font-size:13px;">🎯 再练 3 道相似题</b>
-    <ul class="sim-list">
+  <div style="margin-top:10px;background:#f8fafc;border:1px solid var(--line);border-radius:8px;padding:10px 12px;">
+    <b style="font-size:13px;">🎯 再练 {{ sim_map[q.id]|length }} 道相似题</b>
+    <div class="sim-cards">
       {% for s in sim_map[q.id] %}
-      <li>{{ s.stem }}{% if s.sim %} <span class="muted">（相似度 {{ (s.sim * 100) | round(0) | int }}%）</span>{% endif %}</li>
+      <div class="sim-card" data-sid="{{ s.id }}">
+        <div class="sim-stem">{{ s.stem }}{% if s.sim %} <span class="muted small">相似度 {{ (s.sim * 100) | round(0) | int }}%</span>{% endif %}</div>
+        {% if s.qtype == 'judge' %}
+          <button type="button" class="sim-opt" data-label="A" data-correct="{{ '1' if (s.options | selectattr('is_correct') | first | default(false)) and (s.options | selectattr('is_correct') | first).label == 'A' else '0' }}">A. 正确</button>
+          <button type="button" class="sim-opt" data-label="B" data-correct="{{ '1' if (s.options | selectattr('is_correct') | first | default(false)) and (s.options | selectattr('is_correct') | first).label == 'B' else '0' }}">B. 错误</button>
+        {% else %}
+          {% for o in s.options %}
+          <button type="button" class="sim-opt" data-label="{{ o.label }}" data-correct="{{ '1' if o.is_correct else '0' }}">{{ o.label }}. {{ o.content }}</button>
+          {% endfor %}
+        {% endif %}
+        <div class="sim-feedback"></div>
+      </div>
       {% endfor %}
-    </ul>
+    </div>
   </div>
   {% endif %}
 </div>
@@ -80,5 +91,32 @@ function reportQuestion(qid) {
   }).then(function (r) { return r.json(); })
     .then(function (d) { alert(d.msg); });
 }
+
+/* C19 相似题迷你练习卡片：点选项→判对错→揭示 */
+document.addEventListener('click', function(e) {
+  var btn = e.target.closest('.sim-opt');
+  if (!btn) return;
+  var card = btn.closest('.sim-card');
+  if (card.classList.contains('answered')) return;
+  var picked = btn.dataset.label;
+  // 从正确选项标签（后端已塞到 data-correct 的属性上？不，模板里没写，用 hidden 方式）
+  // 改用 JS 遍历同卡片其他按钮，找到正确答案（通过 data-correct 标记）
+  var correct = '';
+  card.querySelectorAll('.sim-opt').forEach(function(b) {
+    if (b.dataset.correct === '1') correct = b.dataset.label;
+  });
+  card.classList.add('answered');
+  card.querySelectorAll('.sim-opt').forEach(function(b) {
+    b.disabled = true;
+    if (b.dataset.correct === '1') b.classList.add('sim-opt-correct');
+    if (b === btn && picked !== correct) b.classList.add('sim-opt-wrong');
+  });
+  var fb = card.querySelector('.sim-feedback');
+  if (picked === correct) {
+    fb.innerHTML = '<span class="tag-ok">✅ 答对了！</span>';
+  } else {
+    fb.innerHTML = '<span class="tag-bad">❌ 答错了，正确答案 ' + correct + '</span>';
+  }
+});
 </script>
 {% endblock %}
