@@ -122,6 +122,11 @@
   document.body.appendChild(lb);
   var img = lb.querySelector('#lb-img');
   function open(src) {
+    // 用 JS 算固定像素，避免 vw/vh 跟随浏览器缩放
+    var maxW = window.innerWidth * 0.92;
+    var maxH = window.innerHeight * 0.88;
+    img.style.maxWidth = maxW + 'px';
+    img.style.maxHeight = maxH + 'px';
     img.src = src;
     lb.classList.add('show');
   }
@@ -129,7 +134,6 @@
     lb.classList.remove('show');
     img.src = '';
   }
-  // 事件委托：所有 .qimg 点击都触发
   document.addEventListener('click', function(e) {
     if (e.target.classList && e.target.classList.contains('qimg')) {
       open(e.target.src);
