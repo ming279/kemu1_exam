@@ -622,7 +622,7 @@ def _stem_grams(s):
 
 def _similar_questions(qid, n=3):
     """C19 相似题推荐：同题型优先同分类，2-gram Jaccard 取 top n。
-    返回每道题的完整选项（含正确答案），供错题本内嵌迷你练习卡片用。"""
+    只返回题目 id 列表，具体选项由调用方用 load_questions 取。"""
     base = q("SELECT id, stem, qtype, category_id FROM question WHERE id=%s",
              (qid,), one=True)
     if not base:
@@ -641,26 +641,7 @@ def _similar_questions(qid, n=3):
         if score >= 0.12:
             scored.append((score, c))
     scored.sort(key=lambda x: -x[0])
-    top = scored[:n]
-    if not top:
-        return []
-    ids = [c['id'] for _, c in top]
-    # 批量取选项
-    qmarks = ','.join(['%s'] * len(ids))
-    opts = q(f"SELECT question_id, label, content, is_correct FROM `option` "
-             f"WHERE question_id IN ({qmarks}) ORDER BY question_id, label", ids)
-    by_qid = {}
-    for o in opts:
-        by_qid.setdefault(o['question_id'], []).append(o)
-    result = []
-    for sc, c in top:
-        result.append({
-            'id': c['id'], 'stem': c['stem'], 'qtype': base['qtype'],
-            'sim': round(sc, 2),
-            'options': [{'label': o['label'], 'content': o['content'], 'is_correct': o['is_correct']}
-                        for o in by_qid.get(c['id'], [])],
-        })
-    return result
+    return [{'id': c['id'], 'sim': round(sc, 2)} for sc, c in scored[:n]]
 
 
 @app.route('/wrongbook')
@@ -689,6 +670,46 @@ def wrongbook_master(qid):
             (session['uid'], qid))
     flash('已标记为掌握，移出错题本', 'success')
     return redirect(url_for('wrongbook'))
+
+
+@app.route('/wrongbook/sim/<int:qid>')
+@login_required
+def sim_practice(qid):
+    """C19 相似题专项练习：从错题本入口跳转，3 道相似题逐题作答，答完汇总"""
+    base = q("SELECT stem FROM question WHERE id=%s", (qid,), one=True)
+    if not base:
+        abort(404)
+    sims = _similar_questions(qid, n=3)
+    if not sims:
+        flash('这道题暂时找不到足够的相似题可以练习', 'warning')
+        return redirect(url_for('wrongbook'))
+    ids = [s['id'] for s in sims]
+    questions = load_questions(ids)
+    # 保留原推荐顺序（sim 里的 sim 值）
+    sim_map = {s['id']: s['sim'] for s in sims}
+    for qq in questions:
+        qq['sim'] = sim_map.get(qq['id'], 0)
+    questions.sort(key=lambda x: -x['sim'])
+    return render_template('sim_practice.html', questions=questions, base_stem=base['stem'][:60],
+                           base_qid=qid)
+
+
+@app.route('/practice/sim-wrong', methods=['POST'])
+@login_required
+def sim_wrong_record():
+    """C19 相似题练习答错：写 practice 记录 + wrong_book（不影响掌握状态）"""
+    data = request.get_json(silent=True) or {}
+    qid = data.get('qid')
+    if not qid:
+        return jsonify(ok=False), 400
+    execute("INSERT INTO practice (user_id, question_id, user_answer, is_correct) "
+            "VALUES (%s, %s, NULL, 0)", (session['uid'], qid))
+    execute(
+        "INSERT INTO wrong_book (user_id, question_id) VALUES (%s, %s) "
+        "ON DUPLICATE KEY UPDATE wrong_count = wrong_count + 1, "
+        "last_wrong_at = CURRENT_TIMESTAMP, mastered = 0, correct_streak = 0",
+        (session['uid'], qid))
+    return jsonify(ok=True)
 
 
 @app.route('/wrongbook/clear', methods=['POST'])

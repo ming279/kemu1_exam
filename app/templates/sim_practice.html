@@ -1,0 +1,113 @@
+{% extends 'base.html' %}
+{% block content %}
+<div style="margin-bottom:12px;">
+  <a class="btn secondary small" href="{{ url_for('wrongbook') }}">← 返回错题本</a>
+</div>
+<h2>🎯 相似题专项练习</h2>
+<p class="muted">原题：{{ base_stem }}{% if base_stem|length >= 60 %}…{% endif %}</p>
+
+<div id="sim-container">
+  {% for q in questions %}
+  <div class="card sim-q-card" data-idx="{{ loop.index0 }}" {% if loop.first %}style="display:block;"{% else %}style="display:none;"{% endif %}>
+    <h3 style="margin:0 0 4px 0;">第 {{ loop.index }} / {{ questions|length }} 题
+      <span class="qtype">{{ QTYPE_NAME[q.qtype] }}</span>
+      {% if q.sim %}<span class="muted" style="font-size:12px;">相似度 {{ (q.sim * 100) | round(0) | int }}%</span>{% endif %}
+    </h3>
+    <div style="font-size:16px;font-weight:600;margin:8px 0;">{{ q.stem }}</div>
+    {% for iid in q.images %}
+      <img class="qimg" src="{{ url_for('image', iid=iid) }}" alt="题目配图">
+    {% endfor %}
+    {% for o in q.options %}
+      <button type="button" class="sim-opt-btn" data-qid="{{ q.id }}" data-label="{{ o.label }}" data-correct="{{ '1' if o.is_correct else '0' }}">
+        {{ o.label }}. {{ o.content }}
+      </button>
+    {% endfor %}
+    <div class="sim-feedback" id="fb-{{ q.id }}"></div>
+  </div>
+  {% endfor %}
+</div>
+
+<div id="sim-result" style="display:none;" class="card">
+  <h3>🏁 练习完成</h3>
+  <div id="sim-score" style="font-size:20px;font-weight:700;margin:10px 0;"></div>
+  <div id="sim-detail"></div>
+  <div style="margin-top:12px;display:flex;gap:10px;">
+    <a class="btn" href="{{ url_for('wrongbook') }}">返回错题本</a>
+    <a class="btn secondary" href="{{ url_for('sim_practice', qid=base_qid) }}">🔄 再来一组</a>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+var curIdx = 0;
+var total = {{ questions|length }};
+var results = [];  // {qid, picked, correct, ok}
+var baseQid = {{ base_qid }};
+
+document.querySelectorAll('.sim-opt-btn').forEach(function(btn) {
+  btn.addEventListener('click', function() {
+    var card = btn.closest('.sim-q-card');
+    if (card.dataset.done === '1') return;
+    var qid = btn.dataset.qid;
+    var picked = btn.dataset.label;
+    var correct = btn.dataset.correct === '1';
+    // 找同题正确答案 label
+    var correctLabel = '';
+    card.querySelectorAll('.sim-opt-btn').forEach(function(b) {
+      if (b.dataset.correct === '1') correctLabel = b.dataset.label;
+    });
+    card.dataset.done = '1';
+    card.querySelectorAll('.sim-opt-btn').forEach(function(b) {
+      b.disabled = true;
+      if (b.dataset.correct === '1') b.classList.add('sim-opt-correct');
+      if (b === btn && !correct) b.classList.add('sim-opt-wrong');
+    });
+    var ok = correct;
+    var fb = document.getElementById('fb-' + qid);
+    if (ok) {
+      fb.innerHTML = '<span class="tag-ok">✅ 答对了！</span>';
+    } else {
+      fb.innerHTML = '<span class="tag-bad">❌ 答错了，正确答案 ' + correctLabel + '</span>';
+    }
+    results.push({qid: qid, picked: picked, correct: correctLabel, ok: ok});
+
+    // 记录答到错题本（答错才算，不影响掌握状态）
+    if (!ok) {
+      fetch('/practice/sim-wrong', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({qid: qid})
+      });
+    }
+
+    // 下一题或显示结果
+    setTimeout(function() {
+      if (curIdx + 1 < total) {
+        card.style.display = 'none';
+        curIdx++;
+        document.querySelector('.sim-q-card[data-idx="' + curIdx + '"]').style.display = 'block';
+        window.scrollTo({top: 0, behavior: 'smooth'});
+      } else {
+        showResult();
+      }
+    }, 600);
+  });
+});
+
+function showResult() {
+  var correctN = results.filter(function(r){return r.ok;}).length;
+  document.getElementById('sim-container').style.display = 'none';
+  document.getElementById('sim-result').style.display = 'block';
+  document.getElementById('sim-score').textContent =
+    '答对 ' + correctN + ' / ' + total + '（' + Math.round(correctN/total*100) + '%）';
+  var detail = '';
+  results.forEach(function(r, i) {
+    detail += '<div style="margin:6px 0;">' +
+      (r.ok ? '✅' : '❌') + ' 第' + (i+1) + '题：你选 ' + r.picked + '，正确 ' + r.correct +
+      '</div>';
+  });
+  document.getElementById('sim-detail').innerHTML = detail;
+}
+</script>
+{% endblock %}
