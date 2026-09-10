@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% from '_macros.html' import fav_btn %}
 {% block content %}
 <h2>错题本（未掌握 {{ questions|length }} 题）
   {% if questions %}
@@ -15,6 +16,7 @@
   <span class="tag-bad">累计错误 {{ q.wrong_count }} 次</span>
   {% if q.correct_streak >= 1 %}<span class="tag-ok">连对进度 {{ q.correct_streak }}/2</span>{% endif %}
   <span class="muted">最近错误：{{ q.last_wrong_at }}</span>
+  <span style="float:right;">{{ fav_btn(q.id, q.id in fav_ids) }}</span>
   <b>{{ q.stem }}</b>
   {% for iid in q.images %}
     <img class="qimg" src="{{ url_for('image', iid=iid) }}" alt="题目配图">

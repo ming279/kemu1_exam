@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% from '_macros.html' import fav_btn %}
 {% block content %}
 <h2>{{ mode_label }}（第 {{ idx + 1 }} / {{ total }} 题）</h2>
 {% if feedback %}
@@ -19,6 +20,7 @@
   <span class="qtype">{{ QTYPE_NAME[question.qtype] }}</span>
   {% if reveal %}<span class="tag-ok">📖 背题模式</span>{% endif %}
   <button class="btn small secondary" type="button" onclick="speakQuestion()" style="float:right;">🔊 读题</button>
+  <span style="float:right;">{{ fav_btn(question.id, is_fav) }}</span>
   <b>{{ question.stem }}</b>
   {% for iid in question.images %}
     <img class="qimg" src="{{ url_for('image', iid=iid) }}" alt="题目配图">

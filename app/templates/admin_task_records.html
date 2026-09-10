@@ -1,0 +1,57 @@
+{% extends 'base.html' %}
+{% block title %}任务成绩明细 · {{ task.title }}{% endblock %}
+{% block content %}
+<h2>成绩明细：{{ task.title }}
+  <a href="{{ url_for('admin_tasks') }}" class="btn secondary small" style="margin-left:10px;">← 返回任务管理</a>
+</h2>
+<p class="muted">
+  任务 #{{ task.id }}｜{{ '考试' if task.mode == 'exam' else '练习' }}｜
+  共 {{ records|length }} 人参加
+  <b>切屏/离开数据仅作教学参考，不影响学生成绩。</b>
+</p>
+
+{% if not records %}
+<div class="card">暂无学生参加此任务。</div>
+{% else %}
+<table>
+  <tr>
+    <th>学生</th><th>状态</th><th>得分</th><th>用时</th>
+    <th title="离开答题页次数">切屏次数</th><th title="离开答题页累计秒数">离开秒数</th>
+    <th>开始时间</th><th>提交时间</th><th>操作</th>
+  </tr>
+  {% for r in records %}
+  <tr>
+    <td>{{ r.real_name or r.username }}<div class="muted" style="font-size:12px;">{{ r.username }}</div></td>
+    <td>
+      {% if r.status == 'completed' %}<span class="tag-ok">已完成</span>
+      {% elif r.status == 'in_progress' %}
+        <span class="tag-bad">进行中{% if r.paused %}（已暂停）{% endif %}</span>
+      {% else %}<span class="muted">{{ r.status }}</span>{% endif %}
+    </td>
+    <td>
+      {% if r.status == 'completed' %}
+        <b class="{{ 'tag-ok' if r.score >= 90 else 'tag-bad' }}">{{ r.score }}</b>
+        <span class="muted">/ 100（{{ r.total_count }}题）</span>
+      {% else %}—{% endif %}
+    </td>
+    <td>
+      {% if r.used_sec is not none and r.status == 'completed' %}
+        {{ (r.used_sec // 60) }}分{{ r.used_sec % 60 }}秒
+      {% else %}—{% endif %}
+    </td>
+    <td>{% if r.switch_count %}<b style="color:#d97706;">{{ r.switch_count }}</b>{% else %}0{% endif %}</td>
+    <td>{% if r.blur_sec %}<b style="color:#d97706;">{{ r.blur_sec }}</b>{% else %}0{% endif %}</td>
+    <td class="muted">{{ r.start_time }}</td>
+    <td class="muted">{{ r.submit_time or '—' }}</td>
+    <td>
+      {% if r.paper_id and r.status == 'completed' %}
+      <a class="btn small" href="{{ url_for('exam_result', pid=r.paper_id) }}">查看原卷</a>
+      {% elif r.paper_id %}
+      <span class="muted">未交卷</span>
+      {% else %}—{% endif %}
+    </td>
+  </tr>
+  {% endfor %}
+</table>
+{% endif %}
+{% endblock %}
