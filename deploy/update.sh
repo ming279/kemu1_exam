@@ -17,10 +17,24 @@ fi
 
 echo "[1/3] 拉取最新代码 ..."
 cd "$APP_DIR"
-$RUN git pull || {
-  echo "GitHub 直连失败，改用 gitclone.com 镜像重试 ..."
-  $RUN git pull https://gitclone.com/github.com/ming279/kemu1_exam.git main
-}
+GIT_URL="https://github.com/ming279/kemu1_exam.git"
+MIRRORS=(
+  "https://ghfast.top/https://github.com/ming279/kemu1_exam.git"
+  "https://mirror.ghproxy.com/https://github.com/ming279/kemu1_exam.git"
+  "https://gitclone.com/github.com/ming279/kemu1_exam.git"
+  "https://gh-proxy.com/https://github.com/ming279/kemu1_exam.git"
+)
+
+if ! $RUN git pull "$GIT_URL" main 2>/dev/null; then
+  echo "GitHub 直连失败，尝试镜像 ..."
+  for m in "${MIRRORS[@]}"; do
+    echo "  → $m"
+    if $RUN git pull "$m" main 2>/dev/null; then
+      echo "✅ 镜像拉取成功"
+      break
+    fi
+  done
+fi
 
 echo "[2/3] 同步 Python 依赖 ..."
 $RUN "$APP_DIR/venv/bin/pip" install -q -r "$APP_DIR/requirements.txt" \
