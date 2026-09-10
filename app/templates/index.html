@@ -10,7 +10,13 @@
 <div class="card">
   <h3>开始学习</h3>
   <p>模拟考试每次随机抽取 <b>60 道单选 + 40 道判断</b> 共 100 题，交卷后自动判分并计入错题本。</p>
-  <form method="post" action="{{ url_for('exam_start') }}" class="inline">
+  <form method="post" action="{{ url_for('exam_start') }}" class="inline" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+    <label style="font-size:13px;">
+      <input type="radio" name="time_limit" value="45" checked> 限时 45 分钟（真实考试节奏）
+    </label>
+    <label style="font-size:13px;">
+      <input type="radio" name="time_limit" value="0"> 不限时
+    </label>
     <button class="btn" type="submit">开始模拟考试</button>
   </form>
   <a class="btn secondary" href="{{ url_for('practice_home') }}">练习（随机/专项/错题）</a>

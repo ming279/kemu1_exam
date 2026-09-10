@@ -21,6 +21,10 @@ ALTER TABLE wrong_book
 ALTER TABLE exam_paper
     ADD COLUMN switch_count INT NOT NULL DEFAULT 0 COMMENT '考试期间切屏次数';
 
+-- C24 自由模拟考限时：45 分钟贴近真实考试，NULL=不限时
+ALTER TABLE exam_paper
+    ADD COLUMN time_limit_sec INT NULL COMMENT '自由模拟考限时秒数（45分钟=2700，NULL不限时）';
+
 -- C16 赛道皮肤：发起方创建对局时选择的皮肤（day/night/rain/desert）
 ALTER TABLE pk_challenge
     ADD COLUMN theme VARCHAR(20) NULL COMMENT 'PK赛道皮肤';
