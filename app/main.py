@@ -1129,7 +1129,7 @@ def admin_stats():
         }, ensure_ascii=False),
         qtype=json.dumps([
             {'name': QTYPE_NAME.get(r['qtype'], r['qtype']), 'value': r['c']}
-            for r in qtype_dist], ensure_ascii=False),
+            for r in qtype_dist if r['qtype'] in QTYPE_NAME], ensure_ascii=False),
         cats=json.dumps([
             {'name': r['name'], 'value': r['cnt']}
             for r in cat_dist if r['cnt'] > 0][:10], ensure_ascii=False),
