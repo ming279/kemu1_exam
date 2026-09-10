@@ -114,26 +114,49 @@
   });
 })();
 
-/* 全局 lightbox：点击 .qimg 全屏放大 */
+/* 全局 lightbox：点击 .qimg 全屏放大，浏览器缩放时反向抵消 */
 (function() {
   var lb = document.createElement('div');
   lb.id = 'lb-overlay';
   lb.innerHTML = '<span id="lb-close">×</span><img id="lb-img" src="" alt=""><div id="lb-hint">点击空白处 / Esc 关闭</div>';
   document.body.appendChild(lb);
   var img = lb.querySelector('#lb-img');
+
+  // 隐藏参考物：测量浏览器实际 zoom 比例
+  var probe = document.createElement('div');
+  probe.style.cssText = 'position:absolute;left:-9999px;top:-9999px;width:1000px;height:1px;';
+  document.body.appendChild(probe);
+
+  function getZoom() {
+    // 1000px 在 zoom=100% 时应该渲染为 1000px
+    return 1000 / probe.offsetWidth;
+  }
+  function applyZoomCompensate() {
+    var z = getZoom();
+    // 反向 scale 抵消浏览器缩放，让 lb-overlay 保持真实像素大小
+    lb.style.transform = 'scale(' + z + ')';
+    lb.style.transformOrigin = 'top left';
+  }
+
   function open(src) {
-    // 用 JS 算固定像素，避免 vw/vh 跟随浏览器缩放
     var maxW = window.innerWidth * 0.92;
     var maxH = window.innerHeight * 0.88;
     img.style.maxWidth = maxW + 'px';
     img.style.maxHeight = maxH + 'px';
     img.src = src;
+    applyZoomCompensate();
     lb.classList.add('show');
   }
   function close() {
     lb.classList.remove('show');
     img.src = '';
   }
+
+  // 浏览器缩放时重新计算
+  window.addEventListener('resize', function() {
+    if (lb.classList.contains('show')) applyZoomCompensate();
+  });
+
   document.addEventListener('click', function(e) {
     if (e.target.classList && e.target.classList.contains('qimg')) {
       open(e.target.src);
