@@ -1032,6 +1032,26 @@ def stats_clear_papers():
     return redirect(url_for('stats'))
 
 
+@app.route('/exam_paper/<int:pid>/delete', methods=['POST'])
+@login_required
+def exam_paper_delete(pid):
+    """删除单份试卷：学生只能删自己已完成的；admin 能删任何"""
+    me = current_user()
+    paper = q("SELECT id, user_id, status FROM exam_paper WHERE id=%s",
+              (pid,), one=True)
+    if not paper:
+        return jsonify(ok=False, msg='试卷不存在'), 404
+    is_admin = me.role == 'admin'
+    if not is_admin and paper['user_id'] != me['uid']:
+        return jsonify(ok=False, msg='无权删除此试卷'), 403
+    if not is_admin and paper['status'] != 'finished':
+        return jsonify(ok=False, msg='只能删除已完成的试卷（进行中请交卷或等限时结束）'), 400
+    # 清 task_record 悬空引用
+    execute("UPDATE task_record SET paper_id=NULL WHERE paper_id=%s", (pid,))
+    execute("DELETE FROM exam_paper WHERE id=%s", (pid,))
+    return jsonify(ok=True)
+
+
 @app.route('/stats/clear/practice', methods=['POST'])
 @login_required
 def stats_clear_practice():
