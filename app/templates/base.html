@@ -12,8 +12,9 @@
   {% if cur_user %}
   <div class="links">
     <a href="{{ url_for('index') }}">首页</a>
-    <form method="post" action="{{ url_for('exam_start') }}" class="inline">
+    <form method="post" action="{{ url_for('exam_start') }}" class="inline" id="nav-exam-form">
       <input type="hidden" name="time_limit" value="45">
+      <input type="hidden" name="abandon" value="">
       <button class="linklike" type="submit" title="限时 45 分钟（真实考试节奏）">模拟考试</button>
     </form>
     <a href="{{ url_for('practice_home') }}">练习</a>
@@ -37,7 +38,35 @@
   {% endwith %}
   {% block content %}{% endblock %}
 </div>
-{% block scripts %}{% endblock %}
+{% block scripts %}
+<script>
+/* 方案3：模拟考试入口——有旧卷时弹确认 */
+(function() {
+  var INFO = {{ in_progress_info|tojson if in_progress_info else 'null' }};
+  if (!INFO) return;
+  var forms = ['exam-form', 'nav-exam-form'];
+  forms.forEach(function(fid) {
+    var form = document.getElementById(fid);
+    if (!form) return;
+    form.addEventListener('submit', function(e) {
+      // 如果已经设置过 abandon，直接提交
+      if (form.abandon.value) return;
+      var ans_count = INFO.ans_count || 0;
+      var started = INFO.started_at ? INFO.started_at.substring(0,16).replace('T',' ') : '';
+      var msg = '你还有一份未完成的模拟考试（' + started + '，已答 ' + ans_count + ' 题）。\n\n'
+              + '点击"确定"继续上次作答，点击"取消"放弃旧卷开新卷。';
+      if (confirm(msg)) {
+        // 继续：abandon 保持空
+        return;
+      } else {
+        // 放弃旧卷：设置 abandon 标志
+        form.abandon.value = '1';
+      }
+    });
+  });
+})();
+</script>
+{% endblock %}
 {% if cur_user %}
 <script src="{{ url_for('static', filename='socket.io.min.js') }}"></script>
 <script>
