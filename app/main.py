@@ -2214,7 +2214,7 @@ def ranking():
     seg_map = {r['bucket']: r['cnt'] for r in seg}
     # PK 战绩饼图：当前登录用户自己的战绩（全局统计 wins==losses 永远 50:50 无意义）
     me_pk = q("SELECT pk_wins, pk_losses FROM `user` WHERE id=%s",
-              (me['uid'],), one=True)
+              (me['id'],), one=True)
     charts = dict(
         seg=json.dumps({'names': seg_order,
                         'values': [seg_map.get(k, 0) for k in seg_order]},
