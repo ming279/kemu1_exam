@@ -33,6 +33,9 @@
         {% else %}
         <a class="btn small" href="{{ url_for('exam_page', pid=p.id) }}">继续作答 / 交卷</a>
         {% endif %}
+        <button class="btn small secondary btn-del-paper" data-pid="{{ p.id }}"
+                data-status="{{ p.status }}" data-title="{{ p.task_title or '模拟考试' }}"
+                style="margin-left:6px;">🗑️ 删除</button>
       </td>
     </tr>
     {% endfor %}
@@ -56,5 +59,44 @@ document.querySelectorAll('.src-tab').forEach(function (btn) {
     document.getElementById('papers-empty').style.display = shown ? 'none' : '';
   });
 });
+
+// 删除单份试卷
+document.querySelectorAll('.btn-del-paper').forEach(function (btn) {
+  btn.addEventListener('click', function () {
+    var pid = btn.dataset.pid;
+    var status = btn.dataset.status;
+    var title = btn.dataset.title;
+    var msg = '确认删除【' + title + '】？\n\n';
+    if (status === 'in_progress') msg += '⚠️ 该试卷还在进行中！删除后无法恢复。\n\n';
+    msg += '此操作不可撤销。';
+    if (!confirm(msg)) return;
+    fetch('/exam_paper/' + pid + '/delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    }).then(function (r) { return r.json(); }).then(function (d) {
+      if (d.ok) {
+        btn.closest('tr').remove();
+        // 更新空状态
+        var visible = document.querySelectorAll('.paper-row:not([style*="display:none"])').length;
+        if (!visible) document.getElementById('papers-empty').style.display = '';
+        flash_toast('✅ 已删除', 'success');
+      } else {
+        alert('删除失败：' + d.msg);
+      }
+    }).catch(function () { alert('网络错误，请刷新重试'); });
+  });
+});
+
+// 简易 toast（如果没现成的）
+function flash_toast(msg, cls) {
+  var t = document.createElement('div');
+  t.textContent = msg;
+  t.style.cssText = 'position:fixed;top:20px;left:50%;transform:translateX(-50%);'
+    + 'padding:10px 22px;background:' + (cls === 'success' ? '#16a34a' : '#dc2626')
+    + ';color:#fff;border-radius:8px;z-index:3000;box-shadow:0 4px 14px rgba(0,0,0,.2);';
+  document.body.appendChild(t);
+  setTimeout(function () { t.style.opacity = '0'; t.style.transition = 'opacity .3s'; }, 1500);
+  setTimeout(function () { t.remove(); }, 2000);
+}
 </script>
 {% endblock %}
