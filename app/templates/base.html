@@ -13,9 +13,12 @@
   <div class="links">
     <a href="{{ url_for('index') }}">首页</a>
     <form method="post" action="{{ url_for('exam_start') }}" class="inline" id="nav-exam-form">
-      <input type="hidden" name="time_limit" value="45">
+      <select name="time_limit" style="font-size:12px;padding:2px 4px;border-radius:4px;border:1px solid #cbd5e1;background:#fff;">
+        <option value="45">限时45分</option>
+        <option value="0">不限时</option>
+      </select>
       <input type="hidden" name="abandon" value="">
-      <button class="linklike" type="submit" title="限时 45 分钟（真实考试节奏）">模拟考试</button>
+      <button class="linklike" type="submit">模拟考试</button>
     </form>
     <a href="{{ url_for('practice_home') }}">练习</a>
     {% if cur_user.role == 'student' %}<a href="{{ url_for('my_tasks_page') }}">我的任务</a>{% endif %}
