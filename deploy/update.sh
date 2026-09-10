@@ -23,7 +23,8 @@ $RUN git pull || {
 }
 
 echo "[2/3] 同步 Python 依赖 ..."
-$RUN "$APP_DIR/venv/bin/pip" install -q -r "$APP_DIR/requirements.txt" gunicorn gevent gevent-websocket
+$RUN "$APP_DIR/venv/bin/pip" install -q -r "$APP_DIR/requirements.txt" \
+  gunicorn gevent gevent-websocket simple-websocket
 
 echo "[3/3] 重启服务 ..."
 systemctl restart kemu1
