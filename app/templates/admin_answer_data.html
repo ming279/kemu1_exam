@@ -20,25 +20,45 @@
       <tr>
         <td><label>筛选任务</label></td>
         <td>
-          <select name="task" class="search-input" multiple size="6" style="width:320px;">
-            <option value="" selected>不筛选（全部）</option>
-            {% for t in tasks %}
-            <option value="{{ t.id }}">{{ t.title }}</option>
-            {% endfor %}
-          </select>
-          <br><span class="muted" style="font-size:12px;">按住 Ctrl/⌘ 可多选，默认全选</span>
+          <div class="check-group" id="task-group">
+            <div class="check-group-actions">
+              <button type="button" class="btn small secondary" data-action="all">全选</button>
+              <button type="button" class="btn small secondary" data-action="none">清空</button>
+              <button type="button" class="btn small secondary" data-action="inv">反选</button>
+              <span class="muted" style="font-size:12px;margin-left:8px;">已选 <b class="sel-count">全部</b> / {{ tasks|length }}</span>
+            </div>
+            <div class="check-group-list">
+              {% for t in tasks %}
+              <label class="check-item">
+                <input type="checkbox" name="task" value="{{ t.id }}" checked>
+                {{ t.title }}
+              </label>
+              {% endfor %}
+              {% if not tasks %}<span class="muted">暂无任务</span>{% endif %}
+            </div>
+          </div>
         </td>
       </tr>
       <tr>
         <td><label>筛选学生</label></td>
         <td>
-          <select name="student" class="search-input" multiple size="6" style="width:320px;">
-            <option value="" selected>不筛选（全部）</option>
-            {% for s in students %}
-            <option value="{{ s.id }}">{{ s.username }}（{{ s.real_name or '未填姓名' }}）</option>
-            {% endfor %}
-          </select>
-          <br><span class="muted" style="font-size:12px;">按住 Ctrl/⌘ 可多选，默认全选</span>
+          <div class="check-group" id="student-group">
+            <div class="check-group-actions">
+              <button type="button" class="btn small secondary" data-action="all">全选</button>
+              <button type="button" class="btn small secondary" data-action="none">清空</button>
+              <button type="button" class="btn small secondary" data-action="inv">反选</button>
+              <span class="muted" style="font-size:12px;margin-left:8px;">已选 <b class="sel-count">全部</b> / {{ students|length }}</span>
+            </div>
+            <div class="check-group-list">
+              {% for s in students %}
+              <label class="check-item">
+                <input type="checkbox" name="student" value="{{ s.id }}" checked>
+                {{ s.username }}{% if s.real_name %}（{{ s.real_name }}）{% endif %}
+              </label>
+              {% endfor %}
+              {% if not students %}<span class="muted">暂无学生</span>{% endif %}
+            </div>
+          </div>
         </td>
       </tr>
       <tr>
@@ -81,4 +101,50 @@
   <p class="muted">仅显示前 20 条，导出可获得全部数据。</p>
   {% endif %}
 </div>
+
+<style>
+.check-group { border:1px solid #e5e7eb; border-radius:8px; padding:10px; background:#fafbfc; max-width:520px; }
+.check-group-actions { margin-bottom:8px; display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+.check-group-actions .btn { padding:3px 10px; font-size:12px; }
+.check-group-list { max-height:180px; overflow-y:auto; display:flex; flex-wrap:wrap; gap:4px 14px; align-content:flex-start; }
+.check-item { font-size:13px; padding:3px 8px; border-radius:4px; cursor:pointer; white-space:nowrap; }
+.check-item:hover { background:#eff6ff; }
+.check-item input { margin-right:4px; }
+</style>
+<script>
+/* 复选框组：全选/清空/反选 + 计数 */
+document.querySelectorAll('.check-group').forEach(function(group) {
+  var box = group.querySelectorAll('input[type=checkbox]');
+  var countEl = group.querySelector('.sel-count');
+  function update() {
+    var checked = group.querySelectorAll('input[type=checkbox]:checked').length;
+    countEl.textContent = checked === box.length ? '全部' : checked;
+  }
+  group.querySelectorAll('.check-group-actions .btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var action = btn.dataset.action;
+      box.forEach(function(cb) {
+        if (action === 'all') cb.checked = true;
+        else if (action === 'none') cb.checked = false;
+        else if (action === 'inv') cb.checked = !cb.checked;
+      });
+      update();
+    });
+  });
+  box.forEach(function(cb) { cb.addEventListener('change', update); });
+  update();
+});
+/* 提交时：如果全部勾上则不发参数（后端空列表=全部）；如果全清空也不发 */
+document.getElementById('export-form').addEventListener('submit', function() {
+  ['task', 'student'].forEach(function(name) {
+    var group = document.querySelector('input[name="' + name + '"]').closest('.check-group');
+    var boxes = group.querySelectorAll('input[type=checkbox]');
+    var allChecked = Array.from(boxes).every(function(cb){return cb.checked;});
+    var noneChecked = Array.from(boxes).every(function(cb){return !cb.checked;});
+    if (allChecked || noneChecked) {
+      boxes.forEach(function(cb){ cb.disabled = true; });
+    }
+  });
+});
+</script>
 {% endblock %}
