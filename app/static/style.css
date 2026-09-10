@@ -28,7 +28,31 @@ th { background:#f3f4f6; }
 .q-card.right { border-left-color:var(--ok); }
 .qtype { display:inline-block; font-size:12px; background:#e0e7ff; color:#3730a3; border-radius:4px; padding:1px 8px; margin-right:8px; }
 .qnum { display:inline-block; font-weight:800; font-size:16px; margin-right:8px; color:#111827; }
-.qimg { max-width:340px; display:block; margin:10px 0; border:1px solid var(--line); border-radius:6px; }
+.qimg { max-width:340px; display:block; margin:10px 0; border:1px solid var(--line); border-radius:6px; cursor:zoom-in; transition:transform .15s; }
+.qimg:hover { transform:scale(1.02); box-shadow:0 4px 12px rgba(37,99,235,.25); }
+
+/* ---- Lightbox 图片放大 ---- */
+#lb-overlay {
+  position:fixed; inset:0; z-index:2000;
+  background:rgba(8,12,28,.92);
+  display:none; align-items:center; justify-content:center;
+  opacity:0; transition:opacity .2s;
+}
+#lb-overlay.show { display:flex; opacity:1; }
+#lb-img {
+  max-width:92vw; max-height:88vh; border-radius:8px;
+  box-shadow:0 20px 60px rgba(0,0,0,.6);
+  cursor:zoom-out; animation:lbIn .18s ease-out;
+}
+@keyframes lbIn { from { transform:scale(.92); } to { transform:scale(1); } }
+#lb-close {
+  position:absolute; top:16px; right:22px; color:#fff; font-size:42px;
+  cursor:pointer; line-height:1; width:44px; height:44px; text-align:center;
+  border-radius:50%; background:rgba(255,255,255,.15); transition:background .15s;
+}
+#lb-close:hover { background:rgba(255,255,255,.3); }
+#lb-hint { position:absolute; bottom:18px; left:50%; transform:translateX(-50%);
+  color:rgba(255,255,255,.6); font-size:13px; }
 .opt { margin:6px 0; }
 .opt label { cursor:pointer; }
 .opt.correct { color:var(--ok); font-weight:600; }
