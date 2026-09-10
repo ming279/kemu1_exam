@@ -2212,17 +2212,16 @@ def ranking():
         "FROM exam_paper WHERE status='finished') t GROUP BY bucket")
     seg_order = ['不及格(<90)', '及格(90-94)', '优秀(95-99)', '满分(100)']
     seg_map = {r['bucket']: r['cnt'] for r in seg}
-    # PK 战绩饼图
-    pk_stat = q(
-        "SELECT COALESCE(SUM(pk_wins),0) wins, COALESCE(SUM(pk_losses),0) losses "
-        "FROM `user` WHERE role='student'", one=True)
+    # PK 战绩饼图：当前登录用户自己的战绩（全局统计 wins==losses 永远 50:50 无意义）
+    me_pk = q("SELECT pk_wins, pk_losses FROM `user` WHERE id=%s",
+              (me['uid'],), one=True)
     charts = dict(
         seg=json.dumps({'names': seg_order,
                         'values': [seg_map.get(k, 0) for k in seg_order]},
                        ensure_ascii=False),
         pk=json.dumps([
-            {'name': '获胜场次', 'value': int(pk_stat['wins'] or 0)},
-            {'name': '失败场次', 'value': int(pk_stat['losses'] or 0)},
+            {'name': '获胜场次', 'value': int(me_pk['pk_wins'] or 0)},
+            {'name': '失败场次', 'value': int(me_pk['pk_losses'] or 0)},
         ], ensure_ascii=False),
     )
 
