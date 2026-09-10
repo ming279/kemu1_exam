@@ -2478,7 +2478,9 @@ def socket_disconnect():
         if uid in (room['challenger'], room['opponent']) \
                 and room['sids'].get(uid) == request.sid:
             room['sids'].pop(uid, None)
-            room['ready'].discard(uid)
+            # 不清理 ready 状态：手机休眠/切网导致的断线很常见，
+            # 清掉 ready 会导致对方上线后准备无法凑齐开局。
+            # ready 只在显式离开或再战重置时清。
             other = room['opponent'] if uid == room['challenger'] else room['challenger']
             emit('opponent_left', {'uid': uid}, room=key)
 
@@ -2512,6 +2514,10 @@ def pk_join(data):
 
     # 通知房间内双方当前状态（重连方据此自动恢复"已准备"按钮/补报）
     _pk_emit_state(key, room)
+
+    # 自动开局检查：对方已准备 + 我方之前也准备过 + 双方都在线 → 开局
+    # 解决"A先准备→A掉线→B上线准备→A重连"场景：A 重连后无需再点准备
+    _pk_try_start(key, room)
 
 
 @socketio.on('watch_join')
@@ -2566,6 +2572,27 @@ def watch_join(data):
         emit('watch_finished', {'pid': pid})
 
 
+def _pk_try_start(key, room):
+    """检查双方都已准备且都在线，满足则开局。供 pk_ready / pk_join 调用。"""
+    if room['status'] != 'waiting':
+        return
+    both_ready = room['challenger'] in room['ready'] and room['opponent'] in room['ready']
+    both_online = room['challenger'] in room['sids'] and room['opponent'] in room['sids']
+    if not (both_ready and both_online):
+        return
+    room['status'] = 'playing'
+    room['current_q'] = -1
+    socketio.sleep(1)
+    emit('start_countdown', {}, room=key)
+    for n in [3, 2, 1]:
+        socketio.sleep(1)
+        emit('countdown', {'n': n}, room=key)
+    socketio.sleep(1)
+    emit('go', {}, room=key)
+    socketio.sleep(0.5)
+    _pk_next_question(key, room)
+
+
 @socketio.on('pk_ready')
 def pk_ready(data):
     """玩家准备"""
@@ -2580,20 +2607,8 @@ def pk_ready(data):
     room['ready'].add(uid)
     _pk_emit_state(key, room)
 
-    # 双方都准备 -> 开始倒计时
-    if room['challenger'] in room['ready'] and room['opponent'] in room['ready']:
-        room['status'] = 'playing'
-        room['current_q'] = -1
-        socketio.sleep(1)
-        emit('start_countdown', {}, room=key)
-        # 3-2-1-GO
-        for n in [3, 2, 1]:
-            socketio.sleep(1)
-            emit('countdown', {'n': n}, room=key)
-        socketio.sleep(1)
-        emit('go', {}, room=key)
-        socketio.sleep(0.5)
-        _pk_next_question(key, room)
+    # 双方都准备且都在线 -> 开始倒计时
+    _pk_try_start(key, room)
 
 
 def _pk_next_question(key, room):
