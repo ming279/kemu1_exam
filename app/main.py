@@ -647,7 +647,7 @@ def _similar_questions(qid, n=3):
     ids = [c['id'] for _, c in top]
     # 批量取选项
     qmarks = ','.join(['%s'] * len(ids))
-    opts = q(f"SELECT question_id, label, content, is_correct FROM question_option "
+    opts = q(f"SELECT question_id, label, content, is_correct FROM `option` "
              f"WHERE question_id IN ({qmarks}) ORDER BY question_id, label", ids)
     by_qid = {}
     for o in opts:
