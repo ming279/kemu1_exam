@@ -13,7 +13,7 @@
           {% if q.qtype == 'multi' %}
             <input type="checkbox" name="{{ name_prefix }}q_{{ q.id }}" value="{{ o.label }}" {{ 'checked' if user_labels and o.label in user_labels else '' }}>
           {% else %}
-            <input type="radio" name="{{ name_prefix }}q_{{ q.id }}" value="{{ o.label }}" {{ 'checked' if user_labels and o.label in user_labels else '' }}>
+            <input type="radio" name="{{ name_prefix }}q_{{ q.id }}" value="{{ o.label }}" {{ 'checked' if user_labels and o.label in user_labels else '' }}">
           {% endif %}
         {% endif %}
         {{ o.label }}、{{ o.content }}
@@ -28,6 +28,7 @@
 <div class="card q-card {{ 'right' if q.is_correct else 'wrong' }}">
   <span class="qtype">{{ q.seq }}. {{ QTYPE_NAME[q.qtype] }}</span>
   {% if not q.is_correct %}<span class="tag-bad">答错</span>{% else %}<span class="tag-ok">正确</span>{% endif %}
+  {{ fav_btn(q.id, q.id in fav_ids) }}
   <b>{{ q.stem }}</b>
   {% for iid in q.images %}
     <img class="qimg" src="{{ url_for('image', iid=iid) }}" alt="题目配图">
@@ -45,4 +46,12 @@
   <div class="muted explanation-none">暂无解析</div>
   {% endif %}
 </div>
+{% endmacro %}
+
+{# 全站复用的题目收藏星星按钮：点击由 base.html 全局 JS 接管，即时切换 ☆/★ #}
+{% macro fav_btn(qid, is_fav=False, big=False) %}
+<button type="button" class="fav-btn{{ ' fav-big' if big }}" data-qid="{{ qid }}"
+        data-fav="{{ '1' if is_fav else '0' }}"
+        title="{{ '取消收藏' if is_fav else '收藏本题' }}"
+        style="background:none;border:none;cursor:pointer;float:right;{{ 'font-size:26px;' if big else 'font-size:20px;' }}line-height:1;padding:0 4px;color:#f59e0b;">{{ '★' if is_fav else '☆' }}</button>
 {% endmacro %}

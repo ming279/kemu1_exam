@@ -157,6 +157,38 @@ def _study_streak(uid):
     return streak
 
 
+def _ongoing_exam(uid):
+    """该学生最近一场未完成考试（自由卷/任务卷），用于全站顶部续考横幅。
+    返回 dict 或 None：remain_sec=None 表示不限时/练习；paused 表示任务练习已暂停。"""
+    r = q(
+        "SELECT p.id, p.task_id, p.started_at, p.time_limit_sec AS free_tl, "
+        "t.title AS task_title, t.mode AS task_mode, t.time_limit_sec AS task_tl, "
+        "tr.status AS tr_status, tr.paused, "
+        "(SELECT COUNT(*) FROM exam_detail d WHERE d.paper_id=p.id "
+        " AND d.user_answer IS NOT NULL) AS ans_n, "
+        "(SELECT COUNT(*) FROM exam_detail d WHERE d.paper_id=p.id) AS total_n "
+        "FROM exam_paper p LEFT JOIN task t ON t.id=p.task_id "
+        "LEFT JOIN task_record tr ON tr.paper_id=p.id "
+        "WHERE p.user_id=%s AND p.status='in_progress' "
+        "ORDER BY p.id DESC LIMIT 1", (uid,), one=True)
+    if not r:
+        return None
+    info = dict(pid=r['id'], name=r['task_title'] or '模拟考试',
+                ans_n=r['ans_n'], total_n=r['total_n'],
+                remain_sec=None, paused=bool(r['paused']))
+    # 限时：自由卷按 started_at；任务考试按 task_record.start_time（任务无暂停）
+    tl = r['task_tl'] if r['task_id'] else r['free_tl']
+    if r['task_id'] and not (r['task_mode'] == 'exam' and r['task_tl']):
+        tl = None
+    if tl and not r['paused']:
+        base = 'tr.start_time' if r['task_id'] else 'p.started_at'
+        e = q(f"SELECT TIMESTAMPDIFF(SECOND, {base}, NOW()) e FROM exam_paper p "
+              f"LEFT JOIN task_record tr ON tr.paper_id=p.id "
+              f"WHERE p.id=%s", (r['id'],), one=True)
+        info['remain_sec'] = max(0, int(tl) - (e['e'] if e else 0))
+    return info
+
+
 @app.context_processor
 def inject_user():
     u = current_user()
@@ -171,6 +203,9 @@ def inject_user():
             extra['pending_reports'] = q(
                 "SELECT COUNT(*) c FROM question_report WHERE status='pending'",
                 one=True)['c']
+        # 学生：未完成考试（顶部续考横幅；考试答题页自身不显示）
+        if request.endpoint != 'exam_page':
+            extra['ongoing_exam'] = _ongoing_exam(u['id'])
     return dict(cur_user=u, QTYPE_NAME=QTYPE_NAME, **extra)
 
 
@@ -451,6 +486,26 @@ def exam_save(pid):
     return jsonify(ok=True)
 
 
+@app.route('/exam/<int:pid>/blur', methods=['POST'])
+@login_required
+def exam_blur(pid):
+    """切屏记录实时上报：次数(switch_count)与累计离开秒(blur_sec)，只记录不拦截。
+    客户端自报数据只取 GREATEST（只能往大走，防篡改改小）。"""
+    paper = q("SELECT id, status FROM exam_paper WHERE id=%s AND user_id=%s",
+              (pid, session['uid']), one=True)
+    if not paper or paper['status'] == 'finished':
+        return jsonify(ok=False), 404
+    data = request.get_json(silent=True) or {}
+    try:
+        count = max(0, min(9999, int(data.get('count', 0))))
+        sec = max(0, min(999999, int(data.get('sec', 0))))
+    except (TypeError, ValueError):
+        return jsonify(ok=False, msg='参数无效'), 400
+    execute("UPDATE exam_paper SET switch_count=GREATEST(switch_count,%s), "
+            "blur_sec=GREATEST(blur_sec,%s) WHERE id=%s", (count, sec, pid))
+    return jsonify(ok=True)
+
+
 @app.route('/exam/<int:pid>/submit', methods=['POST'])
 @login_required
 def exam_submit(pid):
@@ -483,11 +538,13 @@ def exam_submit(pid):
 
     total = paper['total_count']
     final_score = round(score * 100.0 / total, 2)
-    # C2 切屏检测：前端统计 visibilitychange+blur 次数随卷提交
+    # C2 切屏检测：前端统计 visibilitychange+blur 次数随卷提交；秒数取较大值兜底
     switch_n = request.form.get('switch_count', 0, type=int) or 0
+    blur_sec = request.form.get('blur_sec', 0, type=int) or 0
     execute("UPDATE exam_paper SET score=%s, status='finished', "
-            "submitted_at=CURRENT_TIMESTAMP, switch_count=%s WHERE id=%s",
-            (final_score, switch_n, pid))
+            "submitted_at=CURRENT_TIMESTAMP, switch_count=GREATEST(switch_count,%s), "
+            "blur_sec=GREATEST(blur_sec,%s) WHERE id=%s",
+            (final_score, switch_n, blur_sec, pid))
     # 若是任务考试，更新 task_record 状态为 completed
     if paper.get('task_id'):
         execute("UPDATE task_record SET status='completed', "
@@ -499,8 +556,10 @@ def exam_submit(pid):
 @app.route('/exam/<int:pid>/result')
 @login_required
 def exam_result(pid):
-    paper = q("SELECT * FROM exam_paper WHERE id=%s AND user_id=%s",
-              (pid, session['uid']), one=True)
+    me = current_user()
+    is_admin = bool(me and me['role'] == 'admin')
+    paper = q("SELECT * FROM exam_paper WHERE id=%s AND (%s=1 OR user_id=%s)",
+              (pid, int(is_admin), session['uid']), one=True)
     if not paper:
         abort(404)
     if paper['status'] != 'finished':
@@ -515,13 +574,15 @@ def exam_result(pid):
         qq['seq'] = d['seq_no']
     judges = [r for r in questions if r['qtype'] == 'judge']
     singles = [r for r in questions if r['qtype'] != 'judge']
+    fav_ids = _fav_ids(session['uid'], [r['question_id'] for r in details])
     return render_template('exam_result.html', paper=paper,
-                           judges=judges, singles=singles)
+                           judges=judges, singles=singles, fav_ids=fav_ids)
 
 
 # ---------------- practice 模块 ----------------
 # 练习模式枚举全链路统一英文码，中文名仅用于页面展示
-PRACTICE_MODES = {'random': '随机练习', 'category': '专项练习', 'wrong': '错题练习'}
+PRACTICE_MODES = {'random': '随机练习', 'category': '专项练习',
+                  'wrong': '错题练习', 'favorite': '收藏练习'}
 
 
 @app.route('/practice', methods=['GET'])
@@ -537,8 +598,11 @@ def practice_home():
     } for c in cats]
     wrong_n = q("SELECT COUNT(*) c FROM wrong_book WHERE user_id=%s AND mastered=0",
                 (session['uid'],), one=True)['c']
+    fav_n = q("SELECT COUNT(*) c FROM favorite f JOIN question q ON q.id=f.question_id "
+              "WHERE f.user_id=%s AND q.is_deleted=0",
+              (session['uid'],), one=True)['c']
     return render_template('practice_home.html', cat_options=cat_options,
-                           wrong_n=wrong_n)
+                           wrong_n=wrong_n, fav_n=fav_n)
 
 
 @app.route('/practice/start', methods=['POST'])
@@ -566,6 +630,17 @@ def practice_start():
             flash('错题本里还没有需要练习的错题，先去随机练习吧！', 'info')
             return redirect(url_for('practice_home'))
         label_parts.append('错题练习')
+
+    elif mode == 'favorite':
+        rows = q("SELECT f.question_id FROM favorite f "
+                 "JOIN question q ON q.id=f.question_id "
+                 "WHERE f.user_id=%s AND q.is_deleted=0 "
+                 "ORDER BY RAND() LIMIT %s", (session['uid'], n))
+        ids = [r['question_id'] for r in rows]
+        if not ids:
+            flash('收藏夹还是空的，做题时点 ☆ 即可收藏题目', 'info')
+            return redirect(url_for('practice_home'))
+        label_parts.append('收藏练习')
 
     elif mode == 'category':
         cat_raw = request.form.get('category_id', 'all')
@@ -598,7 +673,8 @@ def practice_start():
 
     else:  # random
         ids = [r['id'] for r in
-               q("SELECT id FROM question ORDER BY RAND() LIMIT %s", (n,))]
+               q("SELECT id FROM question WHERE is_deleted=0 "
+                 "ORDER BY RAND() LIMIT %s", (n,))]
 
     session['p_ids'] = ids
     session['p_mode'] = mode
@@ -621,10 +697,13 @@ def practice_page(idx):
         return redirect(url_for('practice_page', idx=idx + 1))
     question = loaded[0]
     fb = session.pop('p_feedback', None)      # 上一题的判分反馈
+    is_fav = bool(q("SELECT 1 ok FROM favorite WHERE user_id=%s AND question_id=%s",
+                    (session['uid'], question['id']), one=True))
     return render_template('practice.html', idx=idx, total=len(p_ids),
                            question=question, feedback=fb,
                            reveal=session.get('p_reveal', False),
-                           mode_label=session.get('p_mode_label', '练习'))
+                           mode_label=session.get('p_mode_label', '练习'),
+                           is_fav=is_fav)
 
 
 @app.route('/practice/answer', methods=['POST'])
@@ -732,7 +811,9 @@ def wrongbook():
         it['last_wrong_at'] = r['last_wrong_at']
     # C19 相似题推荐（前 20 题计算，避免长列表过慢）
     sim_map = {it['id']: _similar_questions(it['id']) for it in items[:20]}
-    return render_template('wrongbook.html', questions=items, sim_map=sim_map)
+    fav_ids = _fav_ids(session['uid'], [it['id'] for it in items])
+    return render_template('wrongbook.html', questions=items, sim_map=sim_map,
+                           fav_ids=fav_ids)
 
 
 @app.route('/wrongbook/master/<int:qid>', methods=['POST'])
@@ -762,8 +843,10 @@ def sim_practice(qid):
     for qq in questions:
         qq['sim'] = sim_map.get(qq['id'], 0)
     questions.sort(key=lambda x: -x['sim'])
-    return render_template('sim_practice.html', questions=questions, base_stem=base['stem'][:60],
-                           base_qid=qid)
+    fav_ids = _fav_ids(session['uid'], [qq['id'] for qq in questions] + [qid])
+    return render_template('sim_practice.html', questions=questions,
+                           base_stem=base['stem'][:60], base_qid=qid,
+                           fav_ids=fav_ids)
 
 
 @app.route('/practice/sim-wrong', methods=['POST'])
@@ -795,6 +878,64 @@ def wrongbook_clear():
     if request.form.get('from') == 'stats':
         return redirect(url_for('stats'))
     return redirect(url_for('wrongbook'))
+
+
+# ---------------- 题目收藏夹 ----------------
+def _fav_ids(uid, qids):
+    """批量返回该用户已收藏的题目 id 集合，供列表页渲染星星状态"""
+    if not qids:
+        return set()
+    ph = ','.join(['%s'] * len(qids))
+    return {r['question_id'] for r in
+            q(f"SELECT question_id FROM favorite WHERE user_id=%s "
+              f"AND question_id IN ({ph})", (uid, *qids))}
+
+
+@app.route('/favorites')
+@login_required
+def favorites_page():
+    """收藏夹列表：学生自主收藏的题，可直接开始收藏练习或逐题移除"""
+    rows = q(
+        "SELECT f.id AS fav_id, f.created_at, q.id AS qid, q.stem, q.qtype "
+        "FROM favorite f JOIN question q ON q.id=f.question_id "
+        "WHERE f.user_id=%s AND q.is_deleted=0 "
+        "ORDER BY f.id DESC", (session['uid'],))
+    items = load_questions([r['qid'] for r in rows])
+    for r, it in zip(rows, items):
+        it['fav_id'] = r['fav_id']
+        it['fav_at'] = r['created_at']
+    return render_template('favorites.html', questions=items, total=len(items))
+
+
+@app.route('/favorite/<int:qid>/toggle', methods=['POST'])
+@login_required
+def favorite_toggle(qid):
+    """收藏/取消收藏（同一接口切换）。已删除题目不可收藏。"""
+    qrow = q("SELECT id, is_deleted FROM question WHERE id=%s",
+             (qid,), one=True)
+    if not qrow:
+        return jsonify(ok=False, msg='题目不存在'), 404
+    row = q("SELECT id FROM favorite WHERE user_id=%s AND question_id=%s",
+            (session['uid'], qid), one=True)
+    if row:
+        execute("DELETE FROM favorite WHERE user_id=%s AND question_id=%s",
+                (session['uid'], qid))
+        return jsonify(ok=True, fav=False)
+    if qrow['is_deleted']:
+        return jsonify(ok=False, msg='题目已删除，无法收藏'), 400
+    execute("INSERT INTO favorite (user_id, question_id) VALUES (%s, %s)",
+            (session['uid'], qid))
+    return jsonify(ok=True, fav=True)
+
+
+@app.route('/favorite/<int:qid>/remove', methods=['POST'])
+@login_required
+def favorite_remove(qid):
+    """收藏夹列表页表单式移除（非 AJAX，移除后回到列表）"""
+    execute("DELETE FROM favorite WHERE user_id=%s AND question_id=%s",
+            (session['uid'], qid))
+    flash(f'已移出题 # {qid} 的收藏', 'success')
+    return redirect(url_for('favorites_page'))
 
 
 # ---------------- C18 AI 错题讲解 / C20 纠错上报 ----------------
@@ -1859,6 +2000,29 @@ def admin_tasks_create():
     return redirect(url_for('admin_tasks'))
 
 
+@app.route('/admin/tasks/<int:tid>/records')
+@login_required
+def admin_task_records(tid):
+    """教师查看任务成绩明细：分数/用时/切屏次数与离开秒数，可点进原卷讲评"""
+    me, err = _admin_or_back()
+    if err:
+        return err
+    task = q("SELECT * FROM task WHERE id=%s", (tid,), one=True)
+    if not task:
+        abort(404)
+    records = q(
+        "SELECT u.id AS uid, u.real_name, u.username, tr.status, tr.paper_id, "
+        "tr.start_time, tr.submit_time, tr.paused, "
+        "p.score, p.total_count, p.switch_count, p.blur_sec, "
+        "COALESCE(NULLIF(tr.elapsed_sec, 0), "
+        "  TIMESTAMPDIFF(SECOND, tr.start_time, tr.submit_time)) AS used_sec "
+        "FROM task_record tr JOIN `user` u ON u.id=tr.uid "
+        "LEFT JOIN exam_paper p ON p.id=tr.paper_id "
+        "WHERE tr.task_id=%s "
+        "ORDER BY (tr.status='completed') DESC, p.score DESC, u.id", (tid,))
+    return render_template('admin_task_records.html', task=task, records=records)
+
+
 @app.route('/admin/tasks/<int:tid>/close', methods=['POST'])
 @login_required
 def admin_tasks_close(tid):
@@ -2304,17 +2468,17 @@ def _build_export_data(scenario, task_ids, student_ids, fmt):
         tr_join = "JOIN task_record tr ON tr.paper_id=ep.id" if join_task or task_ids else "LEFT JOIN task_record tr ON tr.paper_id=ep.id"
         rows_data = q(
             "SELECT u.id, u.username, u.real_name, ep.score, ep.total_count, "
-            "tr.elapsed_sec, ep.switch_count, "
+            "tr.elapsed_sec, ep.switch_count, ep.blur_sec, "
             "CASE WHEN ep.score>=90 THEN '通过' ELSE '未通过' END AS pass, "
             "ep.submitted_at "
             f"FROM exam_paper ep JOIN `user` u ON u.id=ep.user_id {tr_join} "
             f"WHERE {' AND '.join(where_parts)} "
             "ORDER BY ep.score DESC", tuple(params))
         headers = ['排名', '学号', '账号', '姓名', '分数', '题数', '通过状态',
-                   '用时(秒)', '切屏次数', '提交时间']
+                   '用时(秒)', '切屏次数', '离开秒数', '提交时间']
         rows = [(i+1, r['id'], r['username'], r['real_name'] or '', r['score'],
                  r['total_count'], r['pass'], r['elapsed_sec'] or '',
-                 r['switch_count'] or 0,
+                 r['switch_count'] or 0, r['blur_sec'] or 0,
                  str(r['submitted_at']) if r['submitted_at'] else '')
                 for i, r in enumerate(rows_data)]
         return headers, rows, '成绩公告'
@@ -3162,11 +3326,17 @@ def pk_answer(data):
 
 PK_CHAT_EMOJIS = ('😊', '😂', '😤', '👍', '🎉')
 PK_CHAT_TAUNTS = ('我要超你了，小心', '就这还想超我', '再练练吧', '等等我', '加油')
+# 观战者专属助威弹幕：渲染成赛道飞入弹幕而非聊天气泡
+PK_CHAT_CHEERS = ('666666', '这波操作可以', '红队冲！', '蓝队稳住啊',
+                  '围观大佬', '太刺激了', '加油加油', '神仙打架')
+# 弹幕服务端限流：(room_key, sid) -> 上次发送时间戳，同 sid 间隔 1.5 秒
+_PK_CHAT_CD = {}
+_PK_CHEER_INTERVAL = 1.5
 
 
 @socketio.on('pk_chat')
 def pk_chat(data):
-    """快捷互动（表情/预设喊话）：玩家与观战者均可发，全房间广播可见。
+    """快捷互动（表情/预设喊话/观战助威弹幕）：玩家与观战者均可发，全房间广播可见。
     文字只允许白名单预设句，表情只允许白名单表情，防刷屏/灌水。"""
     pid = data.get('pid')
     key = _pk_room_key(pid)
@@ -3185,6 +3355,20 @@ def pk_chat(data):
     elif kind == 'text':
         if value not in PK_CHAT_TAUNTS:
             return
+    elif kind == 'cheer':
+        # 助威弹幕仅观战者可发，且服务端 1.5 秒限流
+        if not is_watcher or value not in PK_CHAT_CHEERS:
+            return
+        import time as _time
+        now = _time.time()
+        if len(_PK_CHAT_CD) > 1000:  # 顺手清理过期限流记录，防长期运行堆积
+            expired = [k for k, t in _PK_CHAT_CD.items() if now - t > 300]
+            for k in expired:
+                _PK_CHAT_CD.pop(k, None)
+        cd_key = (key, request.sid)
+        if now - _PK_CHAT_CD.get(cd_key, 0) < _PK_CHEER_INTERVAL:
+            return
+        _PK_CHAT_CD[cd_key] = now
     else:
         return
     u = q("SELECT username, real_name FROM `user` WHERE id=%s", (uid,), one=True)

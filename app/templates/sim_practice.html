@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% from '_macros.html' import fav_btn %}
 {% block content %}
 <div style="margin-bottom:12px;">
   <a class="btn secondary small" href="{{ url_for('wrongbook') }}">← 返回错题本</a>
@@ -12,6 +13,7 @@
     <h3 style="margin:0 0 4px 0;">第 {{ loop.index }} / {{ questions|length }} 题
       <span class="qtype">{{ QTYPE_NAME[q.qtype] }}</span>
       {% if q.sim %}<span class="muted" style="font-size:12px;">相似度 {{ (q.sim * 100) | round(0) | int }}%</span>{% endif %}
+      <span style="float:right;">{{ fav_btn(q.id, q.id in fav_ids) }}</span>
     </h3>
     <div style="font-size:16px;font-weight:600;margin:8px 0;">{{ q.stem }}</div>
     {% for iid in q.images %}

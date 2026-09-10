@@ -11,7 +11,7 @@
   </label>
 </div>
 
-<div class="grid" style="grid-template-columns:repeat(3,1fr);">
+<div class="grid" style="grid-template-columns:repeat(4,1fr);">
   <!-- 随机练习 -->
   <div class="card">
     <h3>🎲 随机练习</h3>
@@ -66,6 +66,22 @@
              {% if not wrong_n %}disabled{% endif %}>
       <button class="btn" type="submit" style="margin-top:10px;"
               {% if not wrong_n %}disabled{% endif %}>开始错题练习</button>
+    </form>
+  </div>
+
+  <!-- 收藏练习 -->
+  <div class="card" style="{% if not fav_n %}opacity:.7;{% endif %}">
+    <h3>⭐ 收藏练习</h3>
+    <p class="muted">只练自己收藏的题，考前集中复习标记过的重点。</p>
+    <p>当前收藏：<b style="color:#d97706;">{{ fav_n }}</b> 道</p>
+    <form method="post" action="{{ url_for('practice_start') }}">
+      <input type="hidden" name="mode" value="favorite">
+      <input type="hidden" name="reveal" class="f-reveal" value="">
+      <label>每轮题数</label>
+      <input type="number" name="num" value="10" min="1" max="500" style="width:100px"
+             {% if not fav_n %}disabled{% endif %}>
+      <button class="btn" type="submit" style="margin-top:10px;"
+              {% if not fav_n %}disabled{% endif %}>开始收藏练习</button>
     </form>
   </div>
 </div>

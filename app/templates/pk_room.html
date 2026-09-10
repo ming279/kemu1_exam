@@ -35,6 +35,15 @@
 #taunt-menu button:hover { background:#eff6ff; }
 body.dark #taunt-menu button:hover { background:#1e3a5f; }
 
+/* 观战助威弹幕按钮 */
+.cheer-btn { background:#f5f3ff; border:1px solid #ddd6fe; color:#6d28d9;
+  border-radius:16px; padding:5px 12px; font-size:13px; font-weight:700; cursor:pointer;
+  transition:transform .1s, background .15s; }
+.cheer-btn:hover { background:#ede9fe; }
+.cheer-btn:active { transform:scale(.93); }
+.cheer-btn.cd { opacity:.45; pointer-events:none; }
+body.dark .cheer-btn { background:#2e1065; border-color:#4c1d95; color:#c4b5fd; }
+
 /* 赛道内聊天气泡流 */
 #chat-flow { position:absolute; left:8px; right:8px; bottom:46px; z-index:8;
   display:flex; flex-direction:column-reverse; gap:5px; pointer-events:none; }
@@ -50,6 +59,12 @@ body.dark #taunt-menu button:hover { background:#1e3a5f; }
 .chat-bubble.role-watcher b { color:#c4b5fd; }
 @keyframes chatIn { from { opacity:0; transform:translateY(8px);} to { opacity:1; transform:translateY(0);} }
 .chat-bubble.fade { opacity:0; transition:opacity .5s; }
+
+/* 观战助威弹幕：从赛道右侧飞入向左飘过，3 条轨道（JS WAAPI 按容器宽度驱动） */
+#cheer-layer { position:absolute; inset:0; z-index:7; overflow:hidden; pointer-events:none; }
+.cheer-item { position:absolute; left:100%; white-space:nowrap; font-size:17px; font-weight:800;
+  color:#c4b5fd; text-shadow:0 0 6px rgba(124,58,237,.9), 0 2px 4px rgba(0,0,0,.6);
+  will-change:transform; }
 .feedback-pop { position:fixed; top:40%; left:50%; transform:translate(-50%,-50%); font-size:80px; font-weight:900; pointer-events:none; z-index:200; animation:popIn .8s ease-out forwards; }
 @keyframes popIn { 0%{opacity:0; transform:translate(-50%,-50%) scale(.3);} 40%{opacity:1; transform:translate(-50%,-50%) scale(1.2);} 100%{opacity:0; transform:translate(-50%,-50%) scale(1);} }
 .shake { animation:shake .4s; }
@@ -217,6 +232,7 @@ body.dark #taunt-menu button:hover { background:#1e3a5f; }
     <button class="btn-mute" id="btn-mute" title="音效开关">🔊</button>
     <div id="watch-badge" style="position:absolute;top:8px;left:8px;z-index:9;display:none;background:rgba(0,0,0,.45);color:#fff;padding:4px 10px;border-radius:14px;font-size:13px;">👀 <span id="watch-n">0</span> 人在看</div>
     <div id="chat-flow"></div>
+    <div id="cheer-layer"></div>
   </div>
 
   <!-- 右侧：题目 60% -->
@@ -283,6 +299,23 @@ body.dark #taunt-menu button:hover { background:#1e3a5f; }
         </div>
       </div>
     </div>
+
+    <!-- 观战者专属：助威弹幕栏（飞入赛道，玩家可见） -->
+    {% if is_watcher %}
+    <div class="card" id="cheer-card" style="padding:10px 16px;">
+      <div style="font-size:13px;color:#a78bfa;font-weight:700;margin-bottom:6px;">📣 助威弹幕（仅观战者可发，飞过赛道）</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;">
+        <button class="cheer-btn" type="button" data-c="666666">🔥 666666</button>
+        <button class="cheer-btn" type="button" data-c="这波操作可以">👏 这波操作可以</button>
+        <button class="cheer-btn" type="button" data-c="红队冲！">🚗 红队冲！</button>
+        <button class="cheer-btn" type="button" data-c="蓝队稳住啊">🚙 蓝队稳住啊</button>
+        <button class="cheer-btn" type="button" data-c="围观大佬">👀 围观大佬</button>
+        <button class="cheer-btn" type="button" data-c="太刺激了">😱 太刺激了</button>
+        <button class="cheer-btn" type="button" data-c="加油加油">💪 加油加油</button>
+        <button class="cheer-btn" type="button" data-c="神仙打架">✨ 神仙打架</button>
+      </div>
+    </div>
+    {% endif %}
   </div>
 </div>
 
@@ -1333,10 +1366,55 @@ tauntMenu.querySelectorAll('button').forEach(function(b) {
     socket.emit('pk_chat', {pid: PID, kind: 'text', value: this.dataset.t});
   });
 });
+
+/* ---- 观战助威弹幕：发送（客户端 1.5s 冷却与服务端一致） + 飞入动效 ---- */
+var CHEER_TEXTS = ['666666', '这波操作可以', '红队冲！', '蓝队稳住啊',
+                   '围观大佬', '太刺激了', '加油加油', '神仙打架'];
+var cheerTracks = [22, 42, 62];   // 三条轨道（距赛道顶部百分比）
+var cheerTrackBusy = [0, 0, 0];   // 每条轨道当前弹幕数
+document.querySelectorAll('.cheer-btn').forEach(function(b) {
+  b.addEventListener('click', function() {
+    if (CHEER_TEXTS.indexOf(this.dataset.c) < 0) return;
+    if (this.classList.contains('cd')) return;
+    socket.emit('pk_chat', {pid: PID, kind: 'cheer', value: this.dataset.c});
+    // 客户端冷却反馈（服务端另有 1.5s 限流兜底）
+    var btn = this;
+    btn.classList.add('cd');
+    setTimeout(function(){ btn.classList.remove('cd'); }, 1500);
+  });
+});
+function flyCheer(text) {
+  var layer = document.getElementById('cheer-layer');
+  if (!layer) return;
+  if (layer.children.length >= 20) return;            // 同屏上限防卡顿
+  // 选当前最空的轨道
+  var track = 0;
+  for (var i = 1; i < 3; i++) {
+    if (cheerTrackBusy[i] < cheerTrackBusy[track]) track = i;
+  }
+  cheerTrackBusy[track]++;
+  var el = document.createElement('div');
+  el.className = 'cheer-item';
+  el.textContent = text;
+  el.style.top = cheerTracks[track] + '%';
+  layer.appendChild(el);
+  var distance = layer.clientWidth + el.offsetWidth;
+  var anim = el.animate(
+    [{transform: 'translateX(0)'},
+     {transform: 'translateX(' + (-distance) + 'px)'}],
+    {duration: 8000, easing: 'linear'}
+  );
+  anim.onfinish = function() {
+    el.remove();
+    cheerTrackBusy[track] = Math.max(0, cheerTrackBusy[track] - 1);
+  };
+}
+
 // 接收广播（自己发的也经广播回执，保证各端位置/身份一致）
 socket.on('pk_chat', function(d) {
   if (d.kind === 'emoji') showEmoji(d.value, d.role);
   else if (d.kind === 'text') addChatBubble(d.role, d.name, d.value);
+  else if (d.kind === 'cheer') flyCheer(d.value);
 });
 function showEmoji(e, role) {
   var div = document.createElement('div');

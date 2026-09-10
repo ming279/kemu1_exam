@@ -40,6 +40,7 @@
     <a href="{{ url_for('practice_home') }}">练习</a>
     {% if cur_user.role == 'student' %}<a href="{{ url_for('my_tasks_page') }}">我的任务</a>{% endif %}
     <a href="{{ url_for('wrongbook') }}">错题本</a>
+    <a href="{{ url_for('favorites_page') }}">⭐ 收藏</a>
     {% if cur_user.role == 'student' %}<a href="{{ url_for('my_papers') }}">考试记录</a>{% endif %}
     <a href="{{ url_for('stats') }}">我的统计</a>
     <a href="{{ url_for('ranking') }}">排名</a>
@@ -56,9 +57,52 @@
   {% with msgs = get_flashed_messages(with_categories=true) %}
     {% for cat, m in msgs %}<div class="flash {{ cat }}">{{ m }}</div>{% endfor %}
   {% endwith %}
+  {% if ongoing_exam %}
+  <div id="resume-banner" class="card"
+       style="border:1px solid #f59e0b;background:#fffbeb;margin-bottom:14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+    <span style="font-size:20px;">🏁</span>
+    <b>你有一场未完成的考试：{{ ongoing_exam.name }}</b>
+    <span class="muted">已答 {{ ongoing_exam.ans_n }}/{{ ongoing_exam.total_n }} 题</span>
+    {% if ongoing_exam.paused %}
+    <span class="tag-bad">⏸ 已暂停（练习任务）</span>
+    {% elif ongoing_exam.remain_sec is not none %}
+    <span>剩余 <b id="banner-cd" data-remain="{{ ongoing_exam.remain_sec }}"
+               style="font-variant-numeric:tabular-nums;color:#dc2626;">--:--:--</b></span>
+    {% else %}
+    <span class="muted">不限时</span>
+    {% endif %}
+    <a class="btn small" href="{{ url_for('exam_page', pid=ongoing_exam.pid) }}"
+       style="margin-left:auto;">继续考试 →</a>
+  </div>
+  {% endif %}
   {% block content %}{% endblock %}
 </div>
 {% block scripts %}
+<script>
+/* 未完成考试横幅倒计时（后端按服务器时间算出剩余秒，前端仅递减显示） */
+(function () {
+  var cd = document.getElementById('banner-cd');
+  if (!cd) return;
+  var remain = parseInt(cd.dataset.remain || '0', 10);
+  function fmt(s) {
+    var h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), r = s % 60;
+    function p(x) { return (x < 10 ? '0' : '') + x; }
+    return p(h) + ':' + p(m) + ':' + p(r);
+  }
+  function tick() {
+    if (remain <= 0) {
+      cd.textContent = '00:00:00';
+      var b = document.getElementById('resume-banner');
+      if (b) { b.style.borderColor = '#dc2626'; }
+      return;
+    }
+    cd.textContent = fmt(remain);
+    remain--;
+  }
+  tick();
+  setInterval(tick, 1000);
+})();
+</script>
 <script>
 /* 方案3：模拟考试入口——有旧卷时弹确认 */
 (function() {
@@ -208,6 +252,35 @@
 })();
 </script>
 {% endif %}
+<script>
+/* 题目收藏 ☆/★ 全局切换：任何页面放 .fav-btn[data-qid] 即可，无需各页写脚本 */
+(function () {
+  document.addEventListener('click', function (e) {
+    var btn = e.target.closest && e.target.closest('.fav-btn');
+    if (!btn) return;
+    e.preventDefault();
+    if (btn.dataset.busy) return;
+    btn.dataset.busy = '1';
+    fetch('/favorite/' + btn.dataset.qid + '/toggle', { method: 'POST' })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (!d.ok) { alert(d.msg || '操作失败'); return; }
+        btn.dataset.fav = d.fav ? '1' : '0';
+        btn.textContent = d.fav ? '★' : '☆';
+        btn.title = d.fav ? '取消收藏' : '收藏本题';
+        // 收藏夹列表页：取消收藏后整卡淡出移除
+        var card = btn.closest('.fav-card');
+        if (card && !d.fav) {
+          card.style.transition = 'opacity .3s';
+          card.style.opacity = '0';
+          setTimeout(function () { card.remove(); }, 300);
+        }
+      })
+      .catch(function () { alert('网络异常，请重试'); })
+      .finally(function () { delete btn.dataset.busy; });
+  });
+})();
+</script>
 <script>
 /* C23 深色模式：localStorage 记忆，全站生效 */
 (function () {
