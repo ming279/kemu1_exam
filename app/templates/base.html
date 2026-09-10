@@ -113,6 +113,35 @@
     if (!wrap.contains(e.target)) wrap.classList.remove('open');
   });
 })();
+
+/* 全局 lightbox：点击 .qimg 全屏放大 */
+(function() {
+  var lb = document.createElement('div');
+  lb.id = 'lb-overlay';
+  lb.innerHTML = '<span id="lb-close">×</span><img id="lb-img" src="" alt=""><div id="lb-hint">点击空白处 / Esc 关闭</div>';
+  document.body.appendChild(lb);
+  var img = lb.querySelector('#lb-img');
+  function open(src) {
+    img.src = src;
+    lb.classList.add('show');
+  }
+  function close() {
+    lb.classList.remove('show');
+    img.src = '';
+  }
+  // 事件委托：所有 .qimg 点击都触发
+  document.addEventListener('click', function(e) {
+    if (e.target.classList && e.target.classList.contains('qimg')) {
+      open(e.target.src);
+      e.preventDefault();
+      return;
+    }
+    if (e.target === lb || e.target.id === 'lb-close') close();
+  });
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape' && lb.classList.contains('show')) close();
+  });
+})();
 </script>
 {% endblock %}
 {% if cur_user %}
