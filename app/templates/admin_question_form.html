@@ -1,0 +1,271 @@
+{% extends 'base.html' %}
+{% block title %}{{ '编辑题目 #' ~ q.id if q.id else '新增题目' }}{% endblock %}
+{% block content %}
+<h1>{{ '编辑题目 #' + q.id|string if q.id else '新增题目' }}</h1>
+
+{% if answered %}
+<div class="card" style="border:1px solid #fdba74;background:#fffbeb;margin-bottom:1em;">
+  ⚠ 该题已被作答 <b>{{ answered }}</b> 次（考试+练习）。修改题干/选项后：
+  历史成绩单仍按当时答案展示；但之后的练习、PK、错题判定将按<b>新答案</b>判分。
+</div>
+{% endif %}
+
+<form method="post" id="qform"
+      action="{{ url_for('admin_question_update', qid=q.id) if q.id else url_for('admin_question_create') }}">
+  <div class="card" style="max-width:860px;">
+    <div style="display:flex;gap:24px;flex-wrap:wrap;margin-bottom:1em;">
+      <div>
+        <b>题型：</b>
+        {% for qt, name in [('judge','判断题'), ('single','单选题'), ('multi','多选题')] %}
+        <label class="qtype-opt" style="margin-right:12px;">
+          <input type="radio" name="qtype" value="{{ qt }}"
+                 {{ 'checked' if q.qtype == qt }}> {{ name }}
+        </label>
+        {% endfor %}
+      </div>
+      <div>
+        <b>分类：</b>
+        <select name="category_id" style="padding:6px;min-width:200px;">
+          <option value="0" {{ 'selected' if not q.category_id }}>未分类</option>
+          {% for c in cats %}
+          <option value="{{ c.id }}" {{ 'selected' if q.category_id == c.id }}>{{ c.label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+
+    <div style="margin-bottom:1em;">
+      <b>题干：</b>
+      <textarea name="stem" rows="4" required
+                placeholder="输入题目题干（带图题的图片在右侧配图区管理）"
+                style="width:100%;padding:8px;">{{ q.stem }}</textarea>
+    </div>
+
+    <div style="margin-bottom:1em;">
+      <b>选项：</b>
+      <div id="opt-rows"></div>
+      <div id="opt-actions" style="margin-top:8px;">
+        <button type="button" class="btn small secondary" id="add-opt">+ 添加选项</button>
+        <span class="muted" style="font-size:12px;">最多 6 个；单选题勾选 1 个正确答案，多选题勾选 2 个及以上</span>
+      </div>
+    </div>
+
+    <div style="margin-bottom:1em;">
+      <b>答案解析：</b>
+      <textarea name="explanation" rows="3" placeholder="选填。学生交卷讲评时展示；AI 讲解也会回填此字段"
+                style="width:100%;padding:8px;">{{ q.explanation or '' }}</textarea>
+    </div>
+
+    <button type="submit" class="btn">💾 保存{{ '修改' if q.id else '题目' }}</button>
+    <a href="{{ url_for('admin_questions') }}" class="btn secondary">取消返回列表</a>
+  </div>
+</form>
+
+<div class="card" style="max-width:860px;">
+  <b>📷 配图管理</b>
+  {% if not q.id %}
+  <p class="muted" style="margin:8px 0 0;">新增题目需先保存，才能上传配图。</p>
+  {% else %}
+  <div id="img-grid" style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px;"></div>
+  <div style="margin-top:10px;">
+    <input type="file" id="img-file" accept="image/png,image/jpeg,image/gif,image/webp" multiple hidden>
+    <button type="button" class="btn small" onclick="document.getElementById('img-file').click()">+ 上传配图</button>
+    <span class="muted" style="font-size:12px;">可多选；png/jpg/gif/webp，单张 ≤ 2MB；相同图片自动去重复用</span>
+  </div>
+  <div id="img-msg" class="muted" style="font-size:13px;margin-top:6px;"></div>
+  {% endif %}
+</div>
+
+<script>
+var optData = {{ options|tojson }};
+var MAXOPT = 6;
+
+function currentQtype() {
+  return document.querySelector('input[name=qtype]:checked').value;
+}
+
+function escHtml(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function renderOpts() {
+  var judge = currentQtype() === 'judge';
+  var wrap = document.getElementById('opt-rows');
+  wrap.innerHTML = '';
+  optData.forEach(function (o, i) {
+    var row = document.createElement('div');
+    row.style.cssText = 'display:flex;align-items:center;gap:8px;margin-top:6px;';
+    var html = '<span style="width:20px;font-weight:600;">' +
+               String.fromCharCode(65 + i) + '.</span>' +
+      '<input name="opt_content" value="' + escHtml(o[1]) + '" required ' +
+      'placeholder="选项内容" style="flex:1;padding:6px;">' +
+      '<label style="white-space:nowrap;font-size:13px;">' +
+      '<input type="checkbox" name="opt_correct" value="' + i + '"' +
+      (o[2] ? ' checked' : '') + '> 正确答案</label>';
+    if (!judge) {
+      html += '<button type="button" class="btn small secondary" ' +
+              'onclick="delOpt(' + i + ')">删除</button>';
+    }
+    row.innerHTML = html;
+    wrap.appendChild(row);
+  });
+  // 判断题锁定两选项，隐藏添加按钮
+  document.getElementById('add-opt').style.display =
+      (judge || optData.length >= MAXOPT) ? 'none' : '';
+}
+
+function correctIndex() {
+  var boxes = document.querySelectorAll('input[name=opt_correct]');
+  for (var i = 0; i < boxes.length; i++) {
+    if (boxes[i].checked) return i;
+  }
+  return -1;
+}
+
+function syncOptData() {
+  var contents = document.querySelectorAll('input[name=opt_content]');
+  var boxes = document.querySelectorAll('input[name=opt_correct]');
+  optData = [];
+  contents.forEach(function (inp, i) {
+    optData.push([String.fromCharCode(65 + i), inp.value,
+                  boxes[i] && boxes[i].checked]);
+  });
+}
+
+function delOpt(i) {
+  syncOptData();
+  optData.splice(i, 1);
+  renderOpts();
+}
+
+document.getElementById('add-opt').addEventListener('click', function () {
+  syncOptData();
+  if (optData.length < MAXOPT) {
+    optData.push([String.fromCharCode(65 + optData.length), '', false]);
+    renderOpts();
+  }
+});
+
+document.querySelectorAll('input[name=qtype]').forEach(function (r) {
+  r.addEventListener('change', function () {
+    if (currentQtype() === 'judge') {
+      var keep = correctIndex();
+      optData = [['A', optData.length ? (optData[0][1] || '正确') : '正确', keep === 0 || keep === -1],
+                 ['B', optData.length > 1 ? (optData[1][1] || '错误') : '错误', keep === 1]];
+    }
+    renderOpts();
+  });
+});
+
+// 单选/判断题：勾选一个正确答案时取消其他（多选不限）
+document.getElementById('opt-rows').addEventListener('change', function (e) {
+  if (e.target.name !== 'opt_correct' || !e.target.checked) return;
+  var qt = currentQtype();
+  if (qt === 'single' || qt === 'judge') {
+    document.querySelectorAll('input[name=opt_correct]').forEach(function (b) {
+      if (b !== e.target) b.checked = false;
+    });
+  }
+});
+
+renderOpts();
+
+// ---------------- 配图管理（仅已保存题目）----------------
+{% if q.id %}
+var QID = {{ q.id }};
+var imgData = [
+  {% for img in images %}{ 'id': {{ img.image_id }}, 'ref': {{ img.ref_count }} }{{ ',' if not loop.last }}{% endfor %}
+];
+
+function imgMsg(s, err) {
+  var el = document.getElementById('img-msg');
+  el.textContent = s;
+  el.style.color = err ? '#dc2626' : '#64748b';
+}
+
+function renderImgs() {
+  var grid = document.getElementById('img-grid');
+  grid.innerHTML = '';
+  imgData.forEach(function (im, i) {
+    var cell = document.createElement('div');
+    cell.style.cssText = 'width:120px;text-align:center;';
+    cell.innerHTML =
+      '<img src="/image/' + im.id + '" class="qimg" ' +
+      'style="width:120px;height:90px;object-fit:cover;border-radius:6px;' +
+      'border:1px solid #e2e8f0;cursor:zoom-in;">' +
+      '<div style="font-size:12px;margin-top:2px;">图 ' + (i + 1) +
+      (im.ref > 1 ? ' <span title="该图片被 ' + im.ref + ' 道题共用">🔗' + im.ref + '</span>' : '') +
+      '</div>' +
+      '<div style="font-size:12px;margin-top:2px;white-space:nowrap;">' +
+      '<a href="javascript:void(0)" onclick="imgMove(' + im.id + ',-1)">↑</a> ' +
+      '<a href="javascript:void(0)" onclick="imgMove(' + im.id + ',1)">↓</a> ' +
+      '<a href="javascript:void(0)" style="color:#dc2626;" ' +
+      'onclick="imgDel(' + im.id + ')">删除</a></div>';
+    grid.appendChild(cell);
+  });
+  if (!imgData.length) {
+    grid.innerHTML = '<span class="muted" style="font-size:13px;">暂无配图</span>';
+  }
+}
+
+function fd(extra) {
+  var f = new FormData();
+  if (extra) Object.keys(extra).forEach(function (k) { f.append(k, extra[k]); });
+  return f;
+}
+
+document.getElementById('img-file').addEventListener('change', function () {
+  if (!this.files.length) return;
+  var f = new FormData();
+  for (var i = 0; i < this.files.length; i++) f.append('file', this.files[i]);
+  imgMsg('上传中…');
+  fetch('/admin/question/' + QID + '/images', { method: 'POST', body: f })
+    .then(function (r) { return r.json().then(function (d) { return { s: r.status, d: d }; }); })
+    .then(function (res) {
+      if (res.d.ok) {
+        res.d.images.forEach(function (im) { imgData.push(im); });
+        renderImgs();
+        imgMsg('已上传 ' + res.d.images.length + ' 张');
+      } else {
+        imgMsg(res.d.msg || '上传失败', true);
+      }
+    });
+  this.value = '';
+});
+
+function imgDel(id) {
+  if (!confirm('从本题删除该配图？（若图片不再被其他题引用，将一并清理存储）')) return;
+  fetch('/admin/question/' + QID + '/image/' + id + '/delete',
+        { method: 'POST', body: fd() })
+    .then(function (r) { return r.json(); })
+    .then(function (d) {
+      if (d.ok) {
+        imgData = imgData.filter(function (im) { return im.id !== id; });
+        renderImgs();
+        imgMsg('已删除');
+      } else { imgMsg(d.msg || '删除失败', true); }
+    });
+}
+
+function imgMove(id, dir) {
+  fetch('/admin/question/' + QID + '/image/' + id + '/move',
+        { method: 'POST', body: fd({ dir: dir < 0 ? 'up' : 'down' }) })
+    .then(function (r) { return r.json(); })
+    .then(function (d) {
+      if (d.ok) {
+        var i = imgData.findIndex(function (im) { return im.id === id; });
+        var j = i + dir;
+        if (i >= 0 && 0 <= j && j < imgData.length) {
+          var t = imgData[i]; imgData[i] = imgData[j]; imgData[j] = t;
+        }
+        renderImgs();
+      }
+    });
+}
+
+renderImgs();
+{% endif %}
+</script>
+{% endblock %}

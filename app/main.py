@@ -16,6 +16,7 @@ import time
 import random
 import hashlib
 import secrets
+from contextlib import contextmanager
 from datetime import date, timedelta
 from functools import wraps
 
@@ -86,6 +87,19 @@ def execute(sql, args=()):
         return cur.lastrowid
 
 
+@contextmanager
+def _tx():
+    """多步写入事务包裹（question+option 等关联写入需原子性）：异常自动回滚"""
+    db = get_db()
+    db.begin()
+    try:
+        yield db
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+
+
 # ---------------- 登录控制 ----------------
 # 登录互踢：同一账号每次登录生成新 token 写入 user.login_token，
 # 旧浏览器 session 中 token 与之不匹配即视为被挤下线（防同账号多人登录串号）
@@ -152,6 +166,11 @@ def inject_user():
         extra['notif_unread'] = q(
             "SELECT COUNT(*) c FROM notification WHERE uid=%s AND is_read=0",
             (u['id'],), one=True)['c']
+        # 管理员：待审核纠错上报数（导航"题目管理"角标）
+        if u['role'] == 'admin':
+            extra['pending_reports'] = q(
+                "SELECT COUNT(*) c FROM question_report WHERE status='pending'",
+                one=True)['c']
     return dict(cur_user=u, QTYPE_NAME=QTYPE_NAME, **extra)
 
 
@@ -346,10 +365,10 @@ def exam_start():
         return redirect(url_for('exam_page', pid=existing['id']))
 
     judges = [r['id'] for r in
-              q(f"SELECT id FROM question WHERE qtype='judge' "
+              q(f"SELECT id FROM question WHERE qtype='judge' AND is_deleted=0 "
                 f"ORDER BY RAND() LIMIT {EXAM_JUDGE_COUNT}")]
     singles = [r['id'] for r in
-               q(f"SELECT id FROM question WHERE qtype='single' "
+               q(f"SELECT id FROM question WHERE qtype='single' AND is_deleted=0 "
                  f"ORDER BY RAND() LIMIT {EXAM_SINGLE_COUNT}")]
     ids = judges + singles
 
@@ -538,7 +557,9 @@ def practice_start():
     label_parts = []
 
     if mode == 'wrong':
-        rows = q("SELECT question_id FROM wrong_book WHERE user_id=%s AND mastered=0 "
+        rows = q("SELECT wb.question_id FROM wrong_book wb "
+                 "JOIN question q ON q.id=wb.question_id "
+                 "WHERE wb.user_id=%s AND wb.mastered=0 AND q.is_deleted=0 "
                  "ORDER BY RAND() LIMIT %s", (session['uid'], n))
         ids = [r['question_id'] for r in rows]
         if not ids:
@@ -549,7 +570,7 @@ def practice_start():
     elif mode == 'category':
         cat_raw = request.form.get('category_id', 'all')
         qtype = request.form.get('qtype', '')
-        where, params = [], []
+        where, params = ["is_deleted=0"], []
         if cat_raw == '0':
             where.append("category_id IS NULL")
             label_parts.append('未分类')
@@ -594,7 +615,11 @@ def practice_page(idx):
     p_ids = session.get('p_ids', [])
     if idx >= len(p_ids):
         return redirect(url_for('practice_summary'))
-    question = load_questions([p_ids[idx]])[0]
+    loaded = load_questions([p_ids[idx]])
+    if not loaded:
+        # 题目已被管理员删除：跳过本题继续（防 IndexError 500）
+        return redirect(url_for('practice_page', idx=idx + 1))
+    question = loaded[0]
     fb = session.pop('p_feedback', None)      # 上一题的判分反馈
     return render_template('practice.html', idx=idx, total=len(p_ids),
                            question=question, feedback=fb,
@@ -608,7 +633,11 @@ def practice_answer():
     idx = int(request.form['idx'])
     p_ids = session.get('p_ids', [])
     qid = p_ids[idx]
-    question = load_questions([qid])[0]
+    loaded = load_questions([qid])
+    if not loaded:
+        # 题目已被管理员删除：跳过本题继续
+        return redirect(url_for('practice_page', idx=idx + 1))
+    question = loaded[0]
     labels = request.form.getlist('q_%d' % qid)
     ok = bool(labels) and judge_answer(question, labels)
 
@@ -670,6 +699,7 @@ def _similar_questions(qid, n=3):
     if not base:
         return []
     cands = q("SELECT id, stem FROM question WHERE id<>%s AND qtype=%s "
+              "AND is_deleted=0 "
               "ORDER BY (category_id=%s) DESC, RAND() LIMIT 400",
               (qid, base['qtype'], base['category_id']))
     grams = _stem_grams(base['stem'])
@@ -807,7 +837,9 @@ def ai_explain(qid):
 @login_required
 def report_question(qid):
     """C20 学生纠错上报（练习/错题本页调用，fetch JSON）"""
-    if not q("SELECT id FROM question WHERE id=%s", (qid,), one=True):
+    row = q("SELECT id, LEFT(stem, 30) stem_short FROM question WHERE id=%s",
+            (qid,), one=True)
+    if not row:
         return jsonify(ok=False, msg='题目不存在'), 404
     if request.is_json:
         data = request.get_json(silent=True) or {}
@@ -817,6 +849,18 @@ def report_question(qid):
     reason = (reason or '').strip() or '未填写具体原因'
     execute("INSERT INTO question_report (question_id, uid, reason) "
             "VALUES (%s, %s, %s)", (qid, session['uid'], reason[:500]))
+    # 通知所有管理员：站内通知 + 实时推送（铃铛亮红点），确保举报不被漏看
+    me = current_user()
+    reporter = (me and (me['real_name'] or me['username'])) or '学生'
+    content = (f'{reporter} 举报了题目 #{qid}（{row["stem_short"]}…）：'
+               f'{reason[:60]}')
+    admins = q("SELECT id FROM `user` WHERE role='admin'")
+    online_sids = [sid for sid, suid in ONLINE_SIDS.items()
+                   if any(a['id'] == suid for a in admins)]
+    for a in admins:
+        _notify(a['id'], content, url_for('admin_questions'))
+    for sid in online_sids:
+        socketio.emit('new_notification', {'content': content[:60]}, room=sid)
     return jsonify(ok=True, msg='已收到反馈，感谢纠错！管理员会尽快核实')
 
 
@@ -1072,7 +1116,8 @@ def admin_stats():
         flash('仅管理员可访问', 'danger')
         return redirect(url_for('index'))
     overview = dict(
-        questions=q("SELECT COUNT(*) c FROM question", one=True)['c'],
+        questions=q("SELECT COUNT(*) c FROM question WHERE is_deleted=0",
+                    one=True)['c'],
         images=q("SELECT COUNT(*) c FROM image", one=True)['c'],
         users=q("SELECT COUNT(*) c FROM `user`", one=True)['c'],
         papers=q("SELECT COUNT(*) c FROM exam_paper WHERE status='finished'",
@@ -1084,11 +1129,12 @@ def admin_stats():
         "SELECT question_id, LEFT(stem, 36) stem, qtype, attempt_count, "
         "correct_count, correct_rate FROM v_question_stat "
         "ORDER BY attempt_count DESC, question_id LIMIT 100")
-    qtype_dist = q("SELECT qtype, COUNT(*) c FROM question GROUP BY qtype")
+    qtype_dist = q("SELECT qtype, COUNT(*) c FROM question "
+                   "WHERE is_deleted=0 GROUP BY qtype")
     # 题库分类分布（加分项①自动归类结果）
     cat_dist = q(
         "SELECT c.name, COUNT(q.id) cnt FROM category c "
-        "LEFT JOIN question q ON q.category_id = c.id "
+        "LEFT JOIN question q ON q.category_id = c.id AND q.is_deleted=0 "
         "GROUP BY c.id, c.name ORDER BY cnt DESC")
     cat_total = sum(r['cnt'] for r in cat_dist) or 1
     # 各用户记录数（供"按用户删除"使用）
@@ -1154,7 +1200,8 @@ def admin_questions():
     search = request.args.get('q', '').strip()
     qtype_f = request.args.get('qtype', '').strip()
     cat_f = request.args.get('cat', '').strip()
-    where, params = "WHERE 1=1", []
+    del_f = request.args.get('del', '').strip()   # 1=查看回收站（已删题）
+    where, params = ("WHERE is_deleted=1" if del_f == '1' else "WHERE is_deleted=0"), []
     if search:
         # C21 支持题干关键词与题号两种搜索方式
         if search.isdigit():
@@ -1174,38 +1221,43 @@ def admin_questions():
     total = q(f"SELECT COUNT(*) c FROM question {where}", params, one=True)['c']
     pages = max(1, (total + per_page - 1) // per_page)
     offset = (page - 1) * per_page
-    rows = q(f"SELECT id, LEFT(stem, 50) stem_short, qtype, explanation "
+    rows = q(f"SELECT id, LEFT(stem, 50) stem_short, qtype, explanation, "
+             f"(SELECT COUNT(*) FROM question_image qi "
+             f"WHERE qi.question_id=question.id) img_n "
              f"FROM question {where} ORDER BY id LIMIT %s OFFSET %s",
              params + [per_page, offset])
     # 筛选下拉选项
-    cats = q("SELECT id, name, parent_id FROM category ORDER BY parent_id, id")
-    name_map = {c['id']: c['name'] for c in cats}
-    cat_options = [{
-        'id': c['id'],
-        'label': (name_map[c['parent_id']] + ' / ' if c['parent_id'] else '')
-                 + c['name'],
-    } for c in cats]
-    # C20 待审核纠错上报
+    cat_options = _cat_options()
+    # C20 待审核纠错上报（置顶展示：完整计数 + 最新 20 条）
+    pending_total = q("SELECT COUNT(*) c FROM question_report "
+                      "WHERE status='pending'", one=True)['c']
     reports = q(
         "SELECT r.id, r.reason, r.created_at, u.username, u.real_name, "
         "q.id AS qid, LEFT(q.stem, 40) stem_short FROM question_report r "
         "JOIN `user` u ON u.id=r.uid JOIN question q ON q.id=r.question_id "
-        "WHERE r.status='pending' ORDER BY r.id DESC LIMIT 50")
+        "WHERE r.status='pending' ORDER BY r.id DESC LIMIT 20")
     return render_template('admin_questions.html', rows=rows, page=page,
                            pages=pages, search=search, total=total,
-                           qtype_f=qtype_f, cat_f=cat_f, cat_options=cat_options,
-                           reports=reports)
+                           qtype_f=qtype_f, cat_f=cat_f, del_f=del_f,
+                           cat_options=cat_options, reports=reports,
+                           pending_total=pending_total)
 
 
 @app.route('/admin/questions/report/<int:rid>/resolve', methods=['POST'])
 @login_required
 def admin_report_resolve(rid):
-    """C20 标记纠错上报为已处理"""
+    """C20 标记纠错上报为已处理，并给举报人发回执通知"""
     me, err = _admin_or_back()
     if err:
         return err
+    r = q("SELECT r.uid, r.question_id FROM question_report r WHERE r.id=%s",
+          (rid,), one=True)
     execute("UPDATE question_report SET status='resolved' WHERE id=%s", (rid,))
-    flash(f'纠错上报 #{rid} 已标记处理完成', 'success')
+    if r:
+        _notify(r['uid'], f'你举报的题目 #{r["question_id"]} 已核实处理，'
+                          f'感谢纠错，题库因你更准确！',
+                url_for('wrongbook'))
+    flash(f'纠错上报 #{rid} 已标记处理完成（已通知举报人）', 'success')
     return redirect(url_for('admin_questions'))
 
 
@@ -1217,6 +1269,289 @@ def admin_save_explanation(qid):
         return err
     text = request.form.get('explanation', '').strip()
     execute("UPDATE question SET explanation=%s WHERE id=%s", (text or None, qid))
+    return jsonify(ok=True)
+
+
+# ---------------- 题目维护：新增/编辑/删除（软删除）----------------
+def _cat_options():
+    """分类下拉选项（父/子级联展示名）"""
+    cats = q("SELECT id, name, parent_id FROM category ORDER BY parent_id, id")
+    name_map = {c['id']: c['name'] for c in cats}
+    return [{'id': c['id'],
+             'label': (name_map[c['parent_id']] + ' / ' if c['parent_id'] else '')
+                      + c['name']}
+            for c in cats]
+
+
+def _validate_question_form():
+    """解析并校验题目表单。返回 (data, err_msg)。
+    data.options 为 [(label, content, is_correct)]，label 由服务端按提交顺序重排。"""
+    stem = (request.form.get('stem') or '').strip()
+    qtype = request.form.get('qtype', '')
+    explanation = (request.form.get('explanation') or '').strip() or None
+    cat_raw = request.form.get('category_id', '')
+    category_id = int(cat_raw) if cat_raw.isdigit() and cat_raw != '0' else None
+
+    if not stem:
+        return None, '题干不能为空'
+    if qtype not in QTYPE_NAME:
+        return None, '题型无效'
+    if category_id is not None and not q(
+            "SELECT id FROM category WHERE id=%s", (category_id,), one=True):
+        return None, '所选分类不存在'
+
+    contents = request.form.getlist('opt_content')
+    corrects = {int(c) for c in request.form.getlist('opt_correct') if c.isdigit()}
+    options = []
+    for i, content in enumerate(contents):
+        content = (content or '').strip()
+        if not content:
+            return None, f'第 {i + 1} 个选项内容不能为空'
+        options.append((chr(ord('A') + i), content, i in corrects))
+
+    n_opts, n_correct = len(options), len(corrects & set(range(n_opts)))
+    if qtype == 'judge':
+        if n_opts != 2:
+            return None, '判断题必须恰好两个选项（正确/错误）'
+        if n_correct != 1:
+            return None, '判断题必须勾选一个正确答案'
+    else:
+        if not (2 <= n_opts <= 6):
+            return None, '选项数量须为 2-6 个'
+        if qtype == 'single' and n_correct != 1:
+            return None, '单选题必须恰好一个正确答案'
+        if qtype == 'multi' and n_correct < 2:
+            return None, '多选题正确答案至少两个'
+    return dict(stem=stem, qtype=qtype, category_id=category_id,
+                explanation=explanation, options=options), None
+
+
+def _question_form_context(qid=None):
+    """新增/编辑页共用数据：题目（编辑时含选项/配图）、分类选项、作答次数警示"""
+    cats = _cat_options()
+    if qid is None:
+        blank = dict(id=None, stem='', qtype='single', category_id=None,
+                     explanation='', is_deleted=0)
+        return render_template('admin_question_form.html', q=blank,
+                               options=[('', '', False)] * 4, images=[],
+                               answered=0, cats=cats)
+    row = q("SELECT * FROM question WHERE id=%s", (qid,), one=True)
+    if not row:
+        abort(404)
+    opts = q("SELECT label, content, is_correct FROM `option` "
+             "WHERE question_id=%s ORDER BY label", (qid,))
+    imgs = q("SELECT qi.image_id, qi.position, i.mime_type FROM question_image qi "
+             "JOIN image i ON i.id=qi.image_id "
+             "WHERE qi.question_id=%s ORDER BY qi.position, qi.image_id", (qid,))
+    answered = q("SELECT COUNT(*) c FROM exam_detail WHERE question_id=%s "
+                 "AND is_correct IS NOT NULL", (qid,), one=True)['c'] \
+        + q("SELECT COUNT(*) c FROM practice WHERE question_id=%s",
+            (qid,), one=True)['c']
+    return render_template('admin_question_form.html', q=row,
+                           options=[(o['label'], o['content'],
+                                     bool(o['is_correct'])) for o in opts],
+                           images=imgs, answered=answered, cats=cats)
+
+
+def _save_question_options(qid, options):
+    """选项全删全插（label 按服务端重排结果落库，历史判分已固化不受影响）"""
+    execute("DELETE FROM `option` WHERE question_id=%s", (qid,))
+    for label, content, ok in options:
+        execute("INSERT INTO `option` (question_id, label, content, is_correct) "
+                "VALUES (%s, %s, %s, %s)", (qid, label, content, int(ok)))
+
+
+@app.route('/admin/question/new')
+@login_required
+def admin_question_new():
+    me, err = _admin_or_back()
+    if err:
+        return err
+    return _question_form_context()
+
+
+@app.route('/admin/question/create', methods=['POST'])
+@login_required
+def admin_question_create():
+    me, err = _admin_or_back()
+    if err:
+        return err
+    data, verr = _validate_question_form()
+    if verr:
+        flash(verr, 'danger')
+        return redirect(url_for('admin_question_new'))
+    with _tx():
+        qid = execute(
+            "INSERT INTO question (stem, qtype, category_id, explanation, "
+            "year_version) VALUES (%s, %s, %s, %s, '2026')",
+            (data['stem'], data['qtype'], data['category_id'],
+             data['explanation']))
+        _save_question_options(qid, data['options'])
+    flash(f'已新增题目 #{qid}', 'success')
+    return redirect(url_for('admin_question_edit', qid=qid))
+
+
+@app.route('/admin/question/<int:qid>/edit')
+@login_required
+def admin_question_edit(qid):
+    me, err = _admin_or_back()
+    if err:
+        return err
+    return _question_form_context(qid)
+
+
+@app.route('/admin/question/<int:qid>/update', methods=['POST'])
+@login_required
+def admin_question_update(qid):
+    me, err = _admin_or_back()
+    if err:
+        return err
+    if not q("SELECT id FROM question WHERE id=%s", (qid,), one=True):
+        abort(404)
+    data, verr = _validate_question_form()
+    if verr:
+        flash(verr, 'danger')
+        return redirect(url_for('admin_question_edit', qid=qid))
+    with _tx():
+        execute("UPDATE question SET stem=%s, qtype=%s, category_id=%s, "
+                "explanation=%s WHERE id=%s",
+                (data['stem'], data['qtype'], data['category_id'],
+                 data['explanation'], qid))
+        _save_question_options(qid, data['options'])
+    flash(f'题目 #{qid} 已更新', 'success')
+    return redirect(url_for('admin_questions'))
+
+
+@app.route('/admin/question/<int:qid>/delete', methods=['POST'])
+@login_required
+def admin_question_delete(qid):
+    """软删除：不出现在抽题/列表/统计，历史成绩与进行中对局不受影响"""
+    me, err = _admin_or_back()
+    if err:
+        return err
+    row = q("SELECT id, is_deleted FROM question WHERE id=%s", (qid,), one=True)
+    if not row:
+        abort(404)
+    if row['is_deleted']:
+        flash('该题已在回收站中', 'info')
+    else:
+        execute("UPDATE question SET is_deleted=1 WHERE id=%s", (qid,))
+        flash(f'题目 #{qid} 已删除（可从回收站恢复；历史成绩与进行中对局不受影响）',
+              'success')
+    return redirect(url_for('admin_questions'))
+
+
+@app.route('/admin/question/<int:qid>/restore', methods=['POST'])
+@login_required
+def admin_question_restore(qid):
+    """从回收站恢复已删题"""
+    me, err = _admin_or_back()
+    if err:
+        return err
+    execute("UPDATE question SET is_deleted=0 WHERE id=%s "
+            "AND is_deleted=1", (qid,))
+    flash(f'题目 #{qid} 已恢复', 'success')
+    return redirect(url_for('admin_questions', **{'del': 1})
+                    if request.form.get('from_trash') else url_for('admin_questions'))
+
+
+# ---------------- 题目维护：配图管理 ----------------
+ALLOWED_IMG_MIME = {'image/png', 'image/jpeg', 'image/gif', 'image/webp'}
+MAX_IMG_SIZE = 2 * 1024 * 1024   # 单张 2MB
+
+
+def _q_images(qid):
+    """题目配图列表（含引用计数，供前端渲染与 ref_count 维护）"""
+    return q("SELECT qi.image_id, qi.position, i.mime_type, i.ref_count "
+             "FROM question_image qi JOIN image i ON i.id=qi.image_id "
+             "WHERE qi.question_id=%s ORDER BY qi.position, qi.image_id", (qid,))
+
+
+@app.route('/admin/question/<int:qid>/images', methods=['POST'])
+@login_required
+def admin_question_images(qid):
+    """AJAX 上传配图（可多选）：SHA-256 内容哈希去重，命中复用 image 行；
+    question_image 关联落库并维护 ref_count 引用计数"""
+    me, err = _admin_or_back()
+    if err:
+        return jsonify(ok=False, msg='仅管理员可操作'), 403
+    if not q("SELECT id FROM question WHERE id=%s", (qid,), one=True):
+        return jsonify(ok=False, msg='题目不存在'), 404
+
+    saved = []
+    for f in request.files.getlist('file'):
+        data = f.read()
+        if not data:
+            continue
+        if f.mimetype not in ALLOWED_IMG_MIME:
+            return jsonify(ok=False,
+                           msg=f'不支持的图片格式：{f.filename}（{f.mimetype}）'), 400
+        if len(data) > MAX_IMG_SIZE:
+            return jsonify(ok=False, msg=f'图片超过 2MB：{f.filename}'), 400
+        h = hashlib.sha256(data).hexdigest()
+        row = q("SELECT id FROM image WHERE content_hash=%s", (h,), one=True)
+        img_id = row['id'] if row else execute(
+            "INSERT INTO image (content_hash, mime_type, file_size, data, ref_count) "
+            "VALUES (%s, %s, %s, %s, 0)", (h, f.mimetype, len(data), data))
+        # 建关联（同题同图不重复关联）；每新增一处引用 ref_count+1
+        already = q("SELECT 1 ok FROM question_image WHERE question_id=%s "
+                    "AND image_id=%s", (qid, img_id), one=True)
+        if already:
+            continue
+        pos = q("SELECT COALESCE(MAX(position), -1) + 1 p FROM question_image "
+                "WHERE question_id=%s", (qid,), one=True)['p']
+        with _tx():
+            execute("INSERT INTO question_image (question_id, image_id, position) "
+                    "VALUES (%s, %s, %s)", (qid, img_id, pos))
+            execute("UPDATE image SET ref_count=ref_count+1 WHERE id=%s", (img_id,))
+        saved.append({'image_id': img_id, 'position': pos})
+    if not saved:
+        return jsonify(ok=False, msg='未选择图片（或所选图已在本题配图中）'), 400
+    return jsonify(ok=True, images=saved)
+
+
+@app.route('/admin/question/<int:qid>/image/<int:image_id>/delete', methods=['POST'])
+@login_required
+def admin_question_image_delete(qid, image_id):
+    """删除本题某配图：解除关联并 ref_count-1；引用归零清理物理 BLOB"""
+    me, err = _admin_or_back()
+    if err:
+        return jsonify(ok=False, msg='仅管理员可操作'), 403
+    n = q("SELECT COUNT(*) c FROM question_image WHERE question_id=%s "
+          "AND image_id=%s", (qid, image_id), one=True)['c']
+    if not n:
+        return jsonify(ok=False, msg='关联不存在'), 404
+    with _tx():
+        execute("DELETE FROM question_image WHERE question_id=%s AND image_id=%s",
+                (qid, image_id))
+        execute("UPDATE image SET ref_count=ref_count-1 WHERE id=%s", (image_id,))
+        if q("SELECT ref_count c FROM image WHERE id=%s",
+             (image_id,), one=True)['c'] <= 0:
+            execute("DELETE FROM image WHERE id=%s AND ref_count<=0", (image_id,))
+    return jsonify(ok=True)
+
+
+@app.route('/admin/question/<int:qid>/image/<int:image_id>/move', methods=['POST'])
+@login_required
+def admin_question_image_move(qid, image_id):
+    """配图排序：dir=up/down 与相邻图交换 position"""
+    me, err = _admin_or_back()
+    if err:
+        return jsonify(ok=False, msg='仅管理员可操作'), 403
+    ids = [r['image_id'] for r in _q_images(qid)]
+    if image_id not in ids:
+        return jsonify(ok=False, msg='关联不存在'), 404
+    i = ids.index(image_id)
+    j = i - 1 if request.form.get('dir') == 'up' else i + 1
+    if 0 <= j < len(ids):
+        other = ids[j]
+        # 三步交换避开 (question_id, image_id) 无冲突写：临时值 127 在 TINYINT 范围内
+        execute("UPDATE question_image SET position=127 "
+                "WHERE question_id=%s AND image_id=%s", (qid, image_id))
+        execute("UPDATE question_image SET position=%s "
+                "WHERE question_id=%s AND image_id=%s", (i, qid, other))
+        execute("UPDATE question_image SET position=%s "
+                "WHERE question_id=%s AND image_id=%s", (j, qid, image_id))
     return jsonify(ok=True)
 
 
@@ -1372,10 +1707,10 @@ def _generate_questions_for_task(judge_count, single_count):
     """教师发布时调用：分别抽判断题和单选题，合并存 question_ids
     判断题在前，单选题在后（打乱时各区内打乱，不混在一起）"""
     judges = [r['id'] for r in
-              q(f"SELECT id FROM question WHERE qtype='judge' "
+              q(f"SELECT id FROM question WHERE qtype='judge' AND is_deleted=0 "
                 f"ORDER BY RAND() LIMIT {int(judge_count)}")]
     singles = [r['id'] for r in
-               q(f"SELECT id FROM question WHERE qtype='single' "
+               q(f"SELECT id FROM question WHERE qtype='single' AND is_deleted=0 "
                  f"ORDER BY RAND() LIMIT {int(single_count)}")]
     # 判断题始终在前，单选题在后
     return judges + singles
@@ -2281,16 +2616,17 @@ def _pk_pick_questions(judge_n, single_n, exclude=None):
         if exclude:
             ex = ','.join(str(i) for i in exclude)
             ids = [r['id'] for r in q(
-                f"SELECT id FROM question WHERE qtype=%s AND id NOT IN ({ex}) "
+                f"SELECT id FROM question WHERE qtype=%s AND is_deleted=0 "
+                f"AND id NOT IN ({ex}) "
                 f"ORDER BY RAND() LIMIT %s", (qtype, n))]
             if len(ids) < n:    # 排除后不够 -> 放宽到全池
                 ids = [r['id'] for r in q(
-                    "SELECT id FROM question WHERE qtype=%s ORDER BY RAND() LIMIT %s",
-                    (qtype, n))]
+                    f"SELECT id FROM question WHERE qtype=%s AND is_deleted=0 "
+                    f"ORDER BY RAND() LIMIT %s", (qtype, n))]
         else:
             ids = [r['id'] for r in q(
-                "SELECT id FROM question WHERE qtype=%s ORDER BY RAND() LIMIT %s",
-                (qtype, n))]
+                f"SELECT id FROM question WHERE qtype=%s AND is_deleted=0 "
+                f"ORDER BY RAND() LIMIT %s", (qtype, n))]
         return ids
 
     return _pick('judge', judge_n) + _pick('single', single_n)
