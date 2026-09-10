@@ -245,8 +245,25 @@ def index():
     me = current_user()
     if me and me['role'] == 'student':
         my_tasks, my_done_tasks = _my_task_data(session['uid'])
+    # 学生：检查是否有进行中的自由模拟卷（用于前端弹确认）
+    has_in_progress = False
+    in_progress_info = None
+    if me and me['role'] == 'student':
+        r = q(
+            "SELECT id, started_at FROM exam_paper WHERE user_id=%s "
+            "AND task_id IS NULL AND status='in_progress' "
+            "ORDER BY id DESC LIMIT 1",
+            (session['uid'],), one=True)
+        if r:
+            has_in_progress = True
+            ans = q("SELECT COUNT(*) c FROM exam_detail WHERE paper_id=%s "
+                    "AND user_answer IS NOT NULL", (r['id'],), one=True)['c']
+            in_progress_info = {'id': r['id'], 'started_at': r['started_at'],
+                               'ans_count': ans}
     return render_template('index.html', stats=stats,
-                           my_tasks=my_tasks, my_done_tasks=my_done_tasks)
+                           my_tasks=my_tasks, my_done_tasks=my_done_tasks,
+                           has_in_progress=has_in_progress,
+                           in_progress_info=in_progress_info)
 
 
 def _my_task_data(uid):
@@ -293,14 +310,36 @@ def my_tasks_page():
 @login_required
 def exam_start():
     """随机组卷：判断题 1-40 在前，单选题 41-100 在后（按题型分区展示）。
-    已有进行中的自由模拟考时直接恢复，防止误点导航新建试卷丢失作答。
-    支持选限时 45 分钟（贴近真实考试）或不限时。"""
+    已有进行中的自由模拟考时直接恢复；用户也可选择放弃旧卷开新卷。"""
+    # 方案5：限时卷超时自动关闭（过了时限+5分钟还没交卷，直接判0分 finished）
+    execute(
+        "UPDATE exam_paper SET status='finished', score=0, "
+        "submitted_at=NOW() "
+        "WHERE user_id=%s AND task_id IS NULL AND status='in_progress' "
+        "AND time_limit_sec IS NOT NULL "
+        "AND TIMESTAMPDIFF(SECOND, started_at, NOW()) > time_limit_sec + 300",
+        (session['uid'],))
+
+    # 方案3：如果用户点了"放弃旧卷开新卷"，先关闭旧卷
+    abandon = request.form.get('abandon')
+    if abandon:
+        execute(
+            "UPDATE exam_paper SET status='finished', score=0, "
+            "submitted_at=NOW() "
+            "WHERE user_id=%s AND task_id IS NULL AND status='in_progress'",
+            (session['uid'],))
+
     existing = q(
-        "SELECT id FROM exam_paper WHERE user_id=%s AND task_id IS NULL "
+        "SELECT id, started_at FROM exam_paper WHERE user_id=%s AND task_id IS NULL "
         "AND status='in_progress' ORDER BY id DESC LIMIT 1",
         (session['uid'],), one=True)
-    if existing:
-        flash('已恢复你上次未完成的模拟考试（作答内容自动保存）', 'info')
+    if existing and not abandon:
+        # 统计已答题数，给用户明确提示
+        ans_count = q(
+            "SELECT COUNT(*) c FROM exam_detail WHERE paper_id=%s AND user_answer IS NOT NULL",
+            (existing['id'],), one=True)['c']
+        flash('已恢复你 ' + existing['started_at'].strftime('%m-%d %H:%M') +
+              ' 的模拟考试（已答 ' + str(ans_count) + ' 题）', 'info')
         return redirect(url_for('exam_page', pid=existing['id']))
 
     judges = [r['id'] for r in
