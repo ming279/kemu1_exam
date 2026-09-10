@@ -12,14 +12,31 @@
   {% if cur_user %}
   <div class="links">
     <a href="{{ url_for('index') }}">首页</a>
-    <form method="post" action="{{ url_for('exam_start') }}" class="inline" id="nav-exam-form">
-      <select name="time_limit" style="font-size:12px;padding:2px 4px;border-radius:4px;border:1px solid #cbd5e1;background:#fff;">
-        <option value="45">限时45分</option>
-        <option value="0">不限时</option>
-      </select>
-      <input type="hidden" name="abandon" value="">
-      <button class="linklike" type="submit">模拟考试</button>
-    </form>
+    <div class="nav-pop" id="nav-exam-wrap">
+      <button class="linklike" type="button" id="nav-exam-trigger">模拟考试 ▾</button>
+      <div class="nav-pop-content" id="nav-exam-pop">
+        <form method="post" action="{{ url_for('exam_start') }}" id="nav-exam-form">
+          <input type="hidden" name="time_limit" id="nav-tl" value="45">
+          <input type="hidden" name="abandon" value="">
+          <div class="nav-pop-title">选择考试模式</div>
+          <label class="nav-pop-opt" data-tl="45">
+            <span class="nav-pop-radio"></span>
+            <div>
+              <div class="nav-pop-opt-name">限时 45 分钟</div>
+              <div class="nav-pop-opt-desc">贴近真实科目一考试节奏</div>
+            </div>
+          </label>
+          <label class="nav-pop-opt" data-tl="0">
+            <span class="nav-pop-radio"></span>
+            <div>
+              <div class="nav-pop-opt-name">不限时</div>
+              <div class="nav-pop-opt-desc">慢慢做，不赶时间</div>
+            </div>
+          </label>
+          <button class="nav-pop-go" type="submit">开始考试 →</button>
+        </form>
+      </div>
+    </div>
     <a href="{{ url_for('practice_home') }}">练习</a>
     {% if cur_user.role == 'student' %}<a href="{{ url_for('my_tasks_page') }}">我的任务</a>{% endif %}
     <a href="{{ url_for('wrongbook') }}">错题本</a>
@@ -66,6 +83,34 @@
         form.abandon.value = '1';
       }
     });
+  });
+})();
+
+/* 导航栏模拟考试气泡 */
+(function() {
+  var wrap = document.getElementById('nav-exam-wrap');
+  var trigger = document.getElementById('nav-exam-trigger');
+  if (!wrap || !trigger) return;
+  var hiddenTl = document.getElementById('nav-tl');
+  var opts = wrap.querySelectorAll('.nav-pop-opt');
+  // 默认选中 45 分钟
+  var curActive = wrap.querySelector('.nav-pop-opt[data-tl="45"]');
+  curActive.classList.add('active');
+  opts.forEach(function(opt) {
+    opt.addEventListener('click', function(e) {
+      e.preventDefault();
+      opts.forEach(function(o) { o.classList.remove('active'); });
+      opt.classList.add('active');
+      hiddenTl.value = opt.dataset.tl;
+    });
+  });
+  trigger.addEventListener('click', function(e) {
+    e.stopPropagation();
+    wrap.classList.toggle('open');
+  });
+  // 点击外部关闭
+  document.addEventListener('click', function(e) {
+    if (!wrap.contains(e.target)) wrap.classList.remove('open');
   });
 })();
 </script>
