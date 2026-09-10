@@ -1884,44 +1884,46 @@ def _export_excel(headers, rows, filename, wrong_col_idx=None, header_bg='4472C4
                  f"filename*=UTF-8''{quote(filename + '.xlsx')}"})
 
 
-def _build_export_data(scenario, task_id, student_id, fmt):
+def _in_clause(ids):
+    """把 ID 列表转成 (sql_fragment, params_tuple) 用于 WHERE col IN (...)"""
+    if not ids:
+        return None, ()
+    placeholders = ','.join(['%s'] * len(ids))
+    return f"IN ({placeholders})", tuple(ids)
+
+
+def _build_export_data(scenario, task_ids, student_ids, fmt):
     """根据场景构建导出数据，返回 (headers, rows, filename)"""
 
     if scenario == 'review':
         # 1. 课堂讲评：按题号，含错误率+错的人名
-        if task_id:
-            rows_data = q(
-                "SELECT q.id, LEFT(q.stem,80) AS stem, q.qtype, "
-                "GROUP_CONCAT(DISTINCT o.label) AS correct_answer, "
-                "COUNT(*) AS wrong_count, "
-                "COUNT(DISTINCT ep.id) AS total_attempts, "
-                "ROUND(COUNT(*)*100.0/GREATEST(COUNT(DISTINCT ep.id),1),1) AS wrong_rate, "
-                "GROUP_CONCAT(DISTINCT ed.user_answer) AS common_wrong, "
-                "GROUP_CONCAT(DISTINCT u.real_name) AS wrong_students "
-                "FROM exam_detail ed "
-                "JOIN exam_paper ep ON ep.id=ed.paper_id "
-                "JOIN task_record tr ON tr.paper_id=ep.id "
-                "JOIN question q ON q.id=ed.question_id "
-                "LEFT JOIN `user` u ON u.id=ep.user_id "
-                "LEFT JOIN `option` o ON o.question_id=q.id AND o.is_correct=1 "
-                "WHERE tr.task_id=%s AND ed.is_correct=0 "
-                "GROUP BY q.id ORDER BY q.id", (task_id,))
-        else:
-            rows_data = q(
-                "SELECT q.id, LEFT(q.stem,80) AS stem, q.qtype, "
-                "GROUP_CONCAT(DISTINCT o.label) AS correct_answer, "
-                "COUNT(*) AS wrong_count, "
-                "COUNT(DISTINCT ep.id) AS total_attempts, "
-                "ROUND(COUNT(*)*100.0/GREATEST(COUNT(DISTINCT ep.id),1),1) AS wrong_rate, "
-                "GROUP_CONCAT(DISTINCT ed.user_answer) AS common_wrong, "
-                "GROUP_CONCAT(DISTINCT u.real_name) AS wrong_students "
-                "FROM exam_detail ed "
-                "JOIN exam_paper ep ON ep.id=ed.paper_id "
-                "JOIN question q ON q.id=ed.question_id "
-                "LEFT JOIN `user` u ON u.id=ep.user_id "
-                "LEFT JOIN `option` o ON o.question_id=q.id AND o.is_correct=1 "
-                "WHERE ed.is_correct=0 "
-                "GROUP BY q.id ORDER BY q.id")
+        task_clause, task_params = _in_clause(task_ids)
+        sid_clause, sid_params = _in_clause(student_ids)
+        extra_where = ["ed.is_correct=0"]
+        params = []
+        if task_clause:
+            extra_where.append(f"tr.task_id {task_clause}")
+            params.extend(task_params)
+        if sid_clause:
+            extra_where.append(f"ep.user_id {sid_clause}")
+            params.extend(sid_params)
+        where_sql = " AND ".join(extra_where)
+        rows_data = q(
+            "SELECT q.id, LEFT(q.stem,80) AS stem, q.qtype, "
+            "GROUP_CONCAT(DISTINCT o.label) AS correct_answer, "
+            "COUNT(*) AS wrong_count, "
+            "COUNT(DISTINCT ep.id) AS total_attempts, "
+            "ROUND(COUNT(*)*100.0/GREATEST(COUNT(DISTINCT ep.id),1),1) AS wrong_rate, "
+            "GROUP_CONCAT(DISTINCT ed.user_answer) AS common_wrong, "
+            "GROUP_CONCAT(DISTINCT u.real_name) AS wrong_students "
+            "FROM exam_detail ed "
+            "JOIN exam_paper ep ON ep.id=ed.paper_id "
+            "JOIN task_record tr ON tr.paper_id=ep.id "
+            "JOIN question q ON q.id=ed.question_id "
+            "LEFT JOIN `user` u ON u.id=ep.user_id "
+            "LEFT JOIN `option` o ON o.question_id=q.id AND o.is_correct=1 "
+            f"WHERE {where_sql} "
+            "GROUP BY q.id ORDER BY q.id", tuple(params))
         headers = ['题号', '题干', '题型', '正确答案', '错次', '错误率(%)', '常见错误答案', '错的学生']
         rows = [(r['id'], r['stem'], r['qtype'], r['correct_answer'],
                  r['wrong_count'], r['wrong_rate'], r['common_wrong'],
@@ -1930,25 +1932,29 @@ def _build_export_data(scenario, task_id, student_id, fmt):
 
     elif scenario == 'scores':
         # 2. 成绩公告：排名、姓名、分数、通过/未通过、用时
-        if task_id:
-            rows_data = q(
-                "SELECT u.id, u.username, u.real_name, ep.score, ep.total_count, "
-                "tr.elapsed_sec, ep.switch_count, "
-                "CASE WHEN ep.score>=90 THEN '通过' ELSE '未通过' END AS pass, "
-                "ep.submitted_at "
-                "FROM exam_paper ep JOIN `user` u ON u.id=ep.user_id "
-                "JOIN task_record tr ON tr.paper_id=ep.id "
-                "WHERE ep.status='finished' AND tr.task_id=%s "
-                "ORDER BY ep.score DESC", (task_id,))
-        else:
-            rows_data = q(
-                "SELECT u.id, u.username, u.real_name, ep.score, ep.total_count, "
-                "tr.elapsed_sec, ep.switch_count, "
-                "CASE WHEN ep.score>=90 THEN '通过' ELSE '未通过' END AS pass, "
-                "ep.submitted_at "
-                "FROM exam_paper ep JOIN `user` u ON u.id=ep.user_id "
-                "LEFT JOIN task_record tr ON tr.paper_id=ep.id "
-                "WHERE ep.status='finished' ORDER BY ep.score DESC")
+        task_clause, task_params = _in_clause(task_ids)
+        sid_clause, sid_params = _in_clause(student_ids)
+        params = []
+        where_parts = ["ep.status='finished'"]
+        join_task = False
+        join_student = False
+        if task_clause:
+            where_parts.append(f"tr.task_id {task_clause}")
+            params.extend(task_params)
+            join_task = True
+        if sid_clause:
+            where_parts.append(f"ep.user_id {sid_clause}")
+            params.extend(sid_params)
+            join_student = True
+        tr_join = "JOIN task_record tr ON tr.paper_id=ep.id" if join_task or task_ids else "LEFT JOIN task_record tr ON tr.paper_id=ep.id"
+        rows_data = q(
+            "SELECT u.id, u.username, u.real_name, ep.score, ep.total_count, "
+            "tr.elapsed_sec, ep.switch_count, "
+            "CASE WHEN ep.score>=90 THEN '通过' ELSE '未通过' END AS pass, "
+            "ep.submitted_at "
+            f"FROM exam_paper ep JOIN `user` u ON u.id=ep.user_id {tr_join} "
+            f"WHERE {' AND '.join(where_parts)} "
+            "ORDER BY ep.score DESC", tuple(params))
         headers = ['排名', '学号', '账号', '姓名', '分数', '题数', '通过状态',
                    '用时(秒)', '切屏次数', '提交时间']
         rows = [(i+1, r['id'], r['username'], r['real_name'] or '', r['score'],
@@ -1959,37 +1965,43 @@ def _build_export_data(scenario, task_id, student_id, fmt):
         return headers, rows, '成绩公告'
 
     elif scenario == 'tutor':
-        # 3. 个别辅导：单学生全部答题明细
-        sid = int(student_id) if student_id else 0
-        if task_id:
-            rows_data = q(
-                "SELECT q.id, LEFT(q.stem,80) AS stem, q.qtype, ed.user_answer, "
-                "(SELECT GROUP_CONCAT(o.label SEPARATOR '') FROM `option` o "
-                "WHERE o.question_id=q.id AND o.is_correct=1) AS correct_answer, "
-                "ed.is_correct, tr.elapsed_sec "
-                "FROM exam_detail ed JOIN exam_paper ep ON ep.id=ed.paper_id "
-                "JOIN question q ON q.id=ed.question_id "
-                "JOIN task_record tr ON tr.paper_id=ep.id "
-                "WHERE ep.user_id=%s AND tr.task_id=%s ORDER BY q.id", (sid, task_id))
-        else:
-            rows_data = q(
-                "SELECT q.id, LEFT(q.stem,80) AS stem, q.qtype, ed.user_answer, "
-                "(SELECT GROUP_CONCAT(o.label SEPARATOR '') FROM `option` o "
-                "WHERE o.question_id=q.id AND o.is_correct=1) AS correct_answer, "
-                "ed.is_correct, tr.elapsed_sec "
-                "FROM exam_detail ed JOIN exam_paper ep ON ep.id=ed.paper_id "
-                "JOIN question q ON q.id=ed.question_id "
-                "LEFT JOIN task_record tr ON tr.paper_id=ep.id "
-                "WHERE ep.user_id=%s ORDER BY q.id", (sid,))
-        headers = ['题号', '题干', '题型', '学生答案', '正确答案', '对错', '用时(秒)']
-        rows = [(r['id'], r['stem'], r['qtype'], r['user_answer'] or '未答',
-                 r['correct_answer'], '对' if r['is_correct'] else '错',
-                 r['elapsed_sec'] or '') for r in rows_data]
-        return headers, rows, f'学生{sid}_答题明细'
+        # 3. 个别辅导：学生答题明细（支持多学生）
+        task_clause, task_params = _in_clause(task_ids)
+        sid_clause, sid_params = _in_clause(student_ids)
+        params = []
+        where_parts = []
+        join_task = False
+        if task_clause:
+            where_parts.append(f"tr.task_id {task_clause}")
+            params.extend(task_params)
+            join_task = True
+        if sid_clause:
+            where_parts.append(f"ep.user_id {sid_clause}")
+            params.extend(sid_params)
+        tr_join = "JOIN task_record tr ON tr.paper_id=ep.id" if join_task else "LEFT JOIN task_record tr ON tr.paper_id=ep.id"
+        where_sql = ("WHERE " + " AND ".join(where_parts)) if where_parts else ""
+        rows_data = q(
+            "SELECT q.id, LEFT(q.stem,80) AS stem, q.qtype, ed.user_answer, "
+            "(SELECT GROUP_CONCAT(o.label SEPARATOR '') FROM `option` o "
+            "WHERE o.question_id=q.id AND o.is_correct=1) AS correct_answer, "
+            "ed.is_correct, tr.elapsed_sec, u.username "
+            f"FROM exam_detail ed JOIN exam_paper ep ON ep.id=ed.paper_id "
+            f"JOIN question q ON q.id=ed.question_id "
+            f"JOIN `user` u ON u.id=ep.user_id "
+            f"{tr_join} {where_sql} ORDER BY u.id, q.id", tuple(params))
+        headers = ['账号', '题号', '题干', '题型', '学生答案', '正确答案', '对错', '用时(秒)']
+        rows = [(r['username'], r['id'], r['stem'], r['qtype'],
+                 r['user_answer'] or '未答', r['correct_answer'],
+                 '对' if r['is_correct'] else '错', r['elapsed_sec'] or '')
+                for r in rows_data]
+        sid_label = '多学生' if (student_ids and len(student_ids) > 1) else ('学生' + (student_ids[0] if student_ids else '全部'))
+        return headers, rows, f'{sid_label}_答题明细'
 
     elif scenario == 'reflect':
         # 4. 教学反思：按分类聚合错误率
-        if task_id:
+        task_clause, task_params = _in_clause(task_ids)
+        params = []
+        if task_clause:
             rows_data = q(
                 "SELECT c.name AS cat_name, COUNT(DISTINCT q.id) AS q_count, "
                 "COUNT(ed.id) AS wrong_count, COUNT(DISTINCT ep.id) AS total_attempts, "
@@ -1998,8 +2010,8 @@ def _build_export_data(scenario, task_id, student_id, fmt):
                 "LEFT JOIN exam_detail ed ON ed.question_id=q.id AND ed.is_correct=0 "
                 "LEFT JOIN exam_paper ep ON ep.id=ed.paper_id "
                 "JOIN task_record tr ON tr.paper_id=ep.id "
-                "WHERE tr.task_id=%s "
-                "GROUP BY c.id, c.name ORDER BY avg_wrong_rate DESC", (task_id,))
+                f"WHERE tr.task_id {task_clause} "
+                "GROUP BY c.id, c.name ORDER BY avg_wrong_rate DESC", tuple(task_params))
         else:
             rows_data = q(
                 "SELECT c.name AS cat_name, COUNT(DISTINCT q.id) AS q_count, "
@@ -2016,30 +2028,30 @@ def _build_export_data(scenario, task_id, student_id, fmt):
 
     else:  # archive
         # 5. 全量存档：所有原始数据
-        if task_id:
-            rows_data = q(
-                "SELECT ep.submitted_at, u.username, u.real_name, t.title, "
-                "q.id, LEFT(q.stem,60) stem, q.qtype, ed.user_answer, "
-                "(SELECT GROUP_CONCAT(o.label SEPARATOR '') FROM `option` o "
-                "WHERE o.question_id=q.id AND o.is_correct=1) AS correct_answer, "
-                "ed.is_correct, tr.elapsed_sec "
-                "FROM exam_detail ed JOIN exam_paper ep ON ep.id=ed.paper_id "
-                "JOIN `user` u ON u.id=ep.user_id JOIN question q ON q.id=ed.question_id "
-                "LEFT JOIN task t ON t.id=ep.task_id "
-                "JOIN task_record tr ON tr.paper_id=ep.id "
-                "WHERE tr.task_id=%s ORDER BY ep.id, ed.seq_no", (task_id,))
-        else:
-            rows_data = q(
-                "SELECT ep.submitted_at, u.username, u.real_name, t.title, "
-                "q.id, LEFT(q.stem,60) stem, q.qtype, ed.user_answer, "
-                "(SELECT GROUP_CONCAT(o.label SEPARATOR '') FROM `option` o "
-                "WHERE o.question_id=q.id AND o.is_correct=1) AS correct_answer, "
-                "ed.is_correct, tr.elapsed_sec "
-                "FROM exam_detail ed JOIN exam_paper ep ON ep.id=ed.paper_id "
-                "JOIN `user` u ON u.id=ep.user_id JOIN question q ON q.id=ed.question_id "
-                "LEFT JOIN task t ON t.id=ep.task_id "
-                "LEFT JOIN task_record tr ON tr.paper_id=ep.id "
-                "ORDER BY ep.id, ed.seq_no")
+        task_clause, task_params = _in_clause(task_ids)
+        sid_clause, sid_params = _in_clause(student_ids)
+        params = []
+        where_parts = []
+        join_task = False
+        if task_clause:
+            where_parts.append(f"tr.task_id {task_clause}")
+            params.extend(task_params)
+            join_task = True
+        if sid_clause:
+            where_parts.append(f"ep.user_id {sid_clause}")
+            params.extend(sid_params)
+        tr_join = "JOIN task_record tr ON tr.paper_id=ep.id" if join_task else "LEFT JOIN task_record tr ON tr.paper_id=ep.id"
+        where_sql = ("WHERE " + " AND ".join(where_parts)) if where_parts else ""
+        rows_data = q(
+            "SELECT ep.submitted_at, u.username, u.real_name, t.title, "
+            "q.id, LEFT(q.stem,60) stem, q.qtype, ed.user_answer, "
+            "(SELECT GROUP_CONCAT(o.label SEPARATOR '') FROM `option` o "
+            "WHERE o.question_id=q.id AND o.is_correct=1) AS correct_answer, "
+            "ed.is_correct, tr.elapsed_sec "
+            f"FROM exam_detail ed JOIN exam_paper ep ON ep.id=ed.paper_id "
+            f"JOIN `user` u ON u.id=ep.user_id JOIN question q ON q.id=ed.question_id "
+            f"LEFT JOIN task t ON t.id=ep.task_id "
+            f"{tr_join} {where_sql} ORDER BY ep.id, ed.seq_no", tuple(params))
         headers = ['提交时间', '账号', '姓名', '任务', '题号', '题干', '题型',
                    '学生答案', '正确答案', '对错', '用时(秒)']
         rows = [(str(r['submitted_at']) if r['submitted_at'] else '', r['username'],
@@ -2078,26 +2090,25 @@ def admin_answer_data():
 @app.route('/admin/answer_data/export')
 @login_required
 def admin_answer_data_export():
-    """导出 CSV/Excel"""
+    """导出 CSV/Excel（支持多选任务/学生）"""
     me, err = _admin_or_back()
     if err:
         return err
     scenario = request.args.get('scenario', 'archive')
     fmt = request.args.get('fmt', 'csv')
-    task_id = request.args.get('task', '', type=str)
-    student_id = request.args.get('student', '', type=str)
+    # 多选下拉返回多个同 key 的参数；多选+空选项时需过滤掉空字符串
+    task_ids = [x for x in request.args.getlist('task', type=str) if x]
+    student_ids = [x for x in request.args.getlist('student', type=str) if x]
+    # 多选全部选了的话也不过滤（返回空列表）
 
     if scenario not in EXPORT_SCENARIOS:
         flash('未知导出场景', 'danger')
         return redirect(url_for('admin_answer_data'))
 
     headers, rows, name_prefix = _build_export_data(
-        scenario, task_id or None, student_id or None, fmt)
-    suffix = f"_{task_id}" if task_id else ''
-    filename = f"{name_prefix}{suffix}"
-
+        scenario, task_ids or None, student_ids or None, fmt)
+    filename = name_prefix
     if fmt == 'excel':
-        # 个别辅导和全量存档有"对错"列，标红错题行
         wrong_col = None
         if scenario in ('tutor', 'archive'):
             wrong_col = headers.index('对错') + 1
