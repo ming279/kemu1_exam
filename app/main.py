@@ -330,16 +330,19 @@ def exam_start():
             (session['uid'],))
 
     existing = q(
-        "SELECT id, started_at FROM exam_paper WHERE user_id=%s AND task_id IS NULL "
-        "AND status='in_progress' ORDER BY id DESC LIMIT 1",
+        "SELECT id, started_at, time_limit_sec FROM exam_paper WHERE user_id=%s "
+        "AND task_id IS NULL AND status='in_progress' ORDER BY id DESC LIMIT 1",
         (session['uid'],), one=True)
     if existing and not abandon:
         # 统计已答题数，给用户明确提示
         ans_count = q(
             "SELECT COUNT(*) c FROM exam_detail WHERE paper_id=%s AND user_answer IS NOT NULL",
             (existing['id'],), one=True)['c']
+        old_tl = '限时 ' + str(existing['time_limit_sec'] // 60) + ' 分钟' \
+            if existing['time_limit_sec'] else '不限时'
         flash('已恢复你 ' + existing['started_at'].strftime('%m-%d %H:%M') +
-              ' 的模拟考试（已答 ' + str(ans_count) + ' 题）', 'info')
+              ' 的模拟考试（已答 ' + str(ans_count) + ' 题，' + old_tl +
+              '）。如需更换设置请放弃此卷开新卷', 'info')
         return redirect(url_for('exam_page', pid=existing['id']))
 
     judges = [r['id'] for r in
