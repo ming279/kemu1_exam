@@ -145,12 +145,13 @@
   var c3 = echarts.init(document.getElementById('chart-qtype'));
   c3.setOption({
     tooltip:{trigger:'item', formatter:'{b}：{c} 题（{d}%）'},
-    legend:{bottom:0},
+    legend:{bottom:0, itemWidth:14, itemHeight:14, textStyle:{fontSize:13}},
     color:palette,
     series:[{type:'pie', radius:['42%','68%'],
       itemStyle:{borderRadius:8, borderColor:'#fff', borderWidth:2},
-      label:{show:true, formatter:'{b}\n{c}题'},
-      labelLine:{show:true}, data:qtype}]
+      label:{show:false},   // 扇区 label 隐藏（图例+tooltip 已足够，且小扇区会被截断）
+      emphasis:{label:{show:true, fontSize:14, fontWeight:'bold'}},
+      data:qtype}]
   });
 
   // 4. 知识分类横向条形图
