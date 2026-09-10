@@ -141,7 +141,7 @@
     }]
   });
 
-  // 3. 题型分布环形图（扇区 label 关闭，避免外侧文字被截断成 ...；底部图例 + tooltip 已完整）
+  // 3. 题型分布环形图
   var c3 = echarts.init(document.getElementById('chart-qtype'));
   c3.setOption({
     tooltip:{trigger:'item', formatter:'{b}：{c} 题（{d}%）'},
@@ -149,8 +149,8 @@
     color:palette,
     series:[{type:'pie', radius:['42%','68%'],
       itemStyle:{borderRadius:8, borderColor:'#fff', borderWidth:2},
-      label:{show:false},
-      labelLine:{show:false}, data:qtype}]
+      label:{show:true, formatter:'{b}\n{c}题'},
+      labelLine:{show:true}, data:qtype}]
   });
 
   // 4. 知识分类横向条形图
