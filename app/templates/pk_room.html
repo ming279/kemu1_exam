@@ -994,12 +994,12 @@ socket.on('connect', function() {
 });
 
 /* 心跳：每 8 秒重新 join，让服务端始终持有最新 sid。
-   解决手机休眠/长轮询超时导致的 socket 假死——客户端以为自己
-   还连着，但服务端已判定掉线清掉了 sid，B 准备时检测双方在线
-   失败、不开局。定期 join 让服务端刷新 sid + 推送最新状态。 */
+   仅在等待阶段（双方准备、未开局）运行；游戏进行中 pk_join
+   仍会广播 room_state 造成 UI 抖动，故跳过。 */
+var gameStarted = false;
 if (!IS_WATCHER) {
   setInterval(function() {
-    if (socket.connected) {
+    if (!gameStarted && socket.connected) {
       socket.emit('pk_join', {pid: PID});
     }
   }, 8000);
@@ -1109,6 +1109,7 @@ socket.on('countdown', function(d) {
   SFX.count();
 });
 socket.on('go', function() {
+  gameStarted = true;     // 游戏开始，停止心跳 pk_join（避免 room_state 广播抖动）
   race.lightsN = 0;       // 熄灭红灯（否则会一直显示）
   race.greenT = 1.1;      // 全绿灯亮 1.1 秒（drawLights 由 greenT 驱动）
   race.started = true;
