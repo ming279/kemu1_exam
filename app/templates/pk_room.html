@@ -993,6 +993,18 @@ socket.on('connect', function() {
   }
 });
 
+/* 心跳：每 8 秒重新 join，让服务端始终持有最新 sid。
+   解决手机休眠/长轮询超时导致的 socket 假死——客户端以为自己
+   还连着，但服务端已判定掉线清掉了 sid，B 准备时检测双方在线
+   失败、不开局。定期 join 让服务端刷新 sid + 推送最新状态。 */
+if (!IS_WATCHER) {
+  setInterval(function() {
+    if (socket.connected) {
+      socket.emit('pk_join', {pid: PID});
+    }
+  }, 8000);
+}
+
 // C14 观战人数实时更新
 socket.on('watch_count', function (d) {
   document.getElementById('watch-n').textContent = d.n;
