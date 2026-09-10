@@ -1065,6 +1065,7 @@ function leaveRoom() {
 }
 
 // C17 房间码一键复制（等待面板按钮 + 答题区小徽章共用）
+// HTTP 环境下 navigator.clipboard 不可用，用 textarea + execCommand 兜底
 function copyRoomCode(btn) {
   var code = document.getElementById('room-code').textContent.trim();
   function ok() {
@@ -1072,10 +1073,20 @@ function copyRoomCode(btn) {
     btn.textContent = '✅ 已复制';
     setTimeout(function(){ btn.textContent = old; }, 1500);
   }
-  if (navigator.clipboard && navigator.clipboard.writeText) {
-    navigator.clipboard.writeText(code).then(ok).catch(function(){ window.prompt('复制房间码：', code); });
+  function fallbackCopy(text) {
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.cssText = 'position:fixed;left:-9999px;top:-9999px';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); ok(); }
+    catch(e) { window.prompt('请手动复制房间码：', text); }
+    document.body.removeChild(ta);
+  }
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(code).then(ok).catch(function(){ fallbackCopy(code); });
   } else {
-    window.prompt('复制房间码：', code);
+    fallbackCopy(code);
   }
 }
 document.getElementById('btn-copy-code').addEventListener('click', function(){ copyRoomCode(this); });
