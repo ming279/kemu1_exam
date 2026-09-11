@@ -23,6 +23,8 @@
 .emoji-btn { font-size:22px; background:none; border:1px solid var(--line); border-radius:50%; width:44px; height:44px; cursor:pointer; }
 .emoji-btn:hover { transform:scale(1.15); }
 .emoji-pop { position:fixed; font-size:36px; pointer-events:none; z-index:200; animation:emojiFly 1.2s ease-out forwards; }
+/* 狂点大招：1 秒内全场第 5 个表情触发，字号放大 + Canvas 震屏 */
+.emoji-pop.mega { font-size:96px; z-index:210; animation-duration:1.6s; }
 @keyframes emojiFly { 0%{opacity:1; transform:translateY(0) scale(.5);} 100%{opacity:0; transform:translateY(-120px) scale(1.4);} }
 
 /* 快捷喊话菜单 */
@@ -1342,10 +1344,9 @@ function chatCdOk() {
   chatCdUntil = now + 1500;
   return true;
 }
-// 表情
+// 表情：狂点无冷却（喊话/助威仍走 chatCdOk 冷却）
 document.querySelectorAll('.emoji-btn[data-e]').forEach(function(b) {
   b.addEventListener('click', function() {
-    if (!chatCdOk()) return;
     socket.emit('pk_chat', {pid: PID, kind: 'emoji', value: this.dataset.e});
   });
 });
@@ -1416,15 +1417,32 @@ socket.on('pk_chat', function(d) {
   else if (d.kind === 'text') addChatBubble(d.role, d.name, d.value);
   else if (d.kind === 'cheer') flyCheer(d.value);
 });
+/* 表情弹出：狂点自由 + 全场 1 秒连击蓄力，第 5 个触发大招（放大+震屏）。
+   各端按相同广播顺序独立计算，效果天然一致；连击为全场合计，人多点更热闹 */
+var emojiBurst = [];   // 最近 1 秒内的表情时间戳
+var emojiPops = [];    // 在屏弹出元素（同屏上限防低端机卡顿）
 function showEmoji(e, role) {
   var div = document.createElement('div');
-  div.className = 'emoji-pop';
+  var now = Date.now();
+  emojiBurst.push(now);
+  emojiBurst = emojiBurst.filter(function(t) { return now - t < 1000; });
+  var mega = emojiBurst.length >= 5;      // 1 秒内第 5 个 → 大招
+  if (mega) emojiBurst = [];              // 蓄力清空，重新积累
+  div.className = 'emoji-pop' + (mega ? ' mega' : '');
   div.textContent = e;
-  div.style.bottom = '32%';
-  // c=红车左道 / o=蓝车右道 / watcher=赛道中上方
-  div.style.left = role === 'c' ? '16%' : role === 'o' ? '33%' : '25%';
+  div.style.bottom = mega ? '30%' : '32%';
+  // c=红车左道 / o=蓝车右道 / watcher=赛道中上方；±40px 随机偏移防连点重叠
+  var baseLeft = role === 'c' ? 16 : role === 'o' ? 33 : 25;
+  div.style.left = 'calc(' + baseLeft + '% + ' + Math.round(Math.random() * 80 - 40) + 'px)';
   document.body.appendChild(div);
-  setTimeout(function(){ div.remove(); }, 1200);
+  emojiPops.push(div);
+  if (emojiPops.length > 12) emojiPops.shift().remove();   // 同屏上限
+  if (mega && typeof race !== 'undefined' && race) race.shakeT = Math.max(race.shakeT || 0, 0.35);
+  setTimeout(function() {
+    var i = emojiPops.indexOf(div);
+    if (i >= 0) emojiPops.splice(i, 1);
+    div.remove();
+  }, mega ? 1600 : 1200);
 }
 function addChatBubble(role, name, text) {
   var flow = document.getElementById('chat-flow');
