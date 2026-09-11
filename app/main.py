@@ -3111,7 +3111,18 @@ def pk_join(data):
     room = PK_ROOMS.get(key)
     if not room:
         rec = q("SELECT * FROM pk_challenge WHERE id=%s", (pid,), one=True)
-        if not rec or rec['status'] != 'waiting':
+        if not rec:
+            return
+        if rec['status'] == 'playing':
+            # B 重启兜底：服务重启丢失内存房间，进行中对局比分/进度无法恢复，
+            # 判平局收场（不动 pk_wins/losses），避免玩家永远卡在进不去的对局。
+            # 仅参赛玩家触发，防止无关用户的 pk_join 误杀对局
+            if _session_uid() in (rec['challenger_uid'], rec['opponent_uid']):
+                execute("UPDATE pk_challenge SET status='finished', winner=NULL "
+                        "WHERE id=%s AND status='playing'", (pid,))
+                emit('room_closed', {'msg': '服务器重启导致对局中断，已按平局处理'})
+            return
+        if rec['status'] != 'waiting':
             return
         room = PK_ROOMS[key] = {
             'challenger': rec['challenger_uid'],
@@ -3136,6 +3147,26 @@ def pk_join(data):
     # 自动开局检查：对方已准备 + 我方之前也准备过 + 双方都在线 → 开局
     # 解决"A先准备→A掉线→B上线准备→A重连"场景：A 重连后无需再点准备
     _pk_try_start(key, room)
+
+    # A 主修复：对局进行中重连（退出重登/F5/切后台）→ 单发对局快照，
+    # 恢复当前题/比分/剩余秒。数据口径与观战 watch_sync 一致但不泄露对方选择
+    if room['status'] == 'playing' and room.get('current_q', -1) >= 0:
+        idx = room['current_q']
+        qq = load_questions([room['questions'][idx]])[0]
+        remain = max(0, round(room.get('q_deadline', time.time()) - time.time()))
+        ans = room.get('answers', {}).get(idx, {}) or {}
+        answered = room.get('answered', {}).get(idx, set())
+        opp = room['opponent'] if uid == room['challenger'] else room['challenger']
+        emit('pk_rejoin', {
+            'idx': idx, 'total': PK_QUESTION_COUNT,
+            'stem': qq['stem'], 'images': qq.get('images', []),
+            'options': [{'label': o['label'], 'content': o['content']}
+                        for o in qq['options']],
+            'q_time': PK_Q_TIME, 'remain': remain,
+            'scores': {str(k): v for k, v in room['scores'].items()},
+            'my_answered': uid in answered, 'my_choice': ans.get(uid),
+            'opp_answered': opp in answered,
+        })
 
 
 @socketio.on('watch_join')
