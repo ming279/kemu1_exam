@@ -1086,8 +1086,8 @@ document.getElementById('btn-ready').addEventListener('click', function() {
   document.getElementById('ready-status').textContent = '你已准备，等待对方…';
 });
 
-socket.on('room_closed', function() {
-  alert('房间已关闭');
+socket.on('room_closed', function(d) {
+  alert((d && d.msg) || '房间已关闭');
   location.href = '/pk';
 });
 
@@ -1165,6 +1165,7 @@ socket.on('go', function() {
 // watchOnly=true 时选项只读不可点（观战者）
 function renderQuestion(d, remainSec, watchOnly) {
   myAnswered = !!watchOnly;
+  document.querySelectorAll('.rejoin-hint').forEach(function(h){ h.remove(); });  // 清重连提示条
   document.getElementById('q-idx').textContent = d.idx + 1;
   var stemEl = document.getElementById('q-stem');
   stemEl.textContent = d.stem;
@@ -1249,6 +1250,32 @@ socket.on('watch_finished', function() {
   rb.textContent = '📺 观看回放';
   rb.style.background = '#8b5cf6';
   rb.onclick = function() { location.href = '/pk/' + PID + '/replay'; };
+});
+
+// 玩家对局中重连（退出重登/F5/切后台）：后端单发对局快照，恢复答题 UI
+socket.on('pk_rejoin', function(d) {
+  document.getElementById('ready-panel').style.display = 'none';
+  document.getElementById('play-panel').style.display = 'block';
+  gameStarted = true;                                  // 停止心跳 pk_join
+  race.started = true; race.lightsN = 0; race.greenT = 0;
+  renderQuestion(d, d.remain, false);                  // 选项可点（未答时）
+  setTargets(d.scores);                                // 双车按当前比分就位
+  if (d.my_answered) {
+    myAnswered = true;
+    document.querySelectorAll('.opt-btn').forEach(function(b) {
+      b.disabled = true;
+      if (d.my_choice && b.textContent.charAt(0) === d.my_choice) {
+        b.style.borderColor = '#f59e0b';               // 中性"已选"标记，不预示对错
+      }
+    });
+    document.getElementById('q-stem').insertAdjacentHTML('afterend',
+      '<div class="rejoin-hint" style="color:#d97706;font-size:13px;font-weight:700;margin:6px 0;">' +
+      '✓ 本题已作答' + (d.opp_answered ? '，双方均已提交' : '，等待对手…') + '</div>');
+  } else if (d.opp_answered) {
+    document.getElementById('q-stem').insertAdjacentHTML('afterend',
+      '<div class="rejoin-hint" style="color:#3b82f6;font-size:13px;font-weight:700;margin:6px 0;">' +
+      '⚡ 对手已作答，抓紧时间！</div>');
+  }
 });
 
 // 下一题
