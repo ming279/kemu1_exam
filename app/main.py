@@ -2829,9 +2829,21 @@ def pk_lobby():
         (session['uid'],))
     for inv in invitations:
         inv['created_at'] = str(inv['created_at'])[:19]
+    # 我有一场未结束的对局（waiting/playing）：退出重登后一键回到战场，
+    # 免去再输房间码；进房后由 pk_rejoin 自动恢复对局状态
+    ongoing = q(
+        "SELECT p.id, p.status, p.challenger_uid, "
+        "uc.real_name AS c_real, uo.real_name AS o_real "
+        "FROM pk_challenge p "
+        "JOIN `user` uc ON uc.id=p.challenger_uid "
+        "JOIN `user` uo ON uo.id=p.opponent_uid "
+        "WHERE p.status IN ('waiting','playing') "
+        "AND (p.challenger_uid=%s OR p.opponent_uid=%s) "
+        "ORDER BY p.id DESC LIMIT 1",
+        (session['uid'], session['uid']), one=True)
     return render_template('pk_lobby.html', students=students,
                            my_stat=my_stat, badge=badge, records=records, me=me,
-                           invitations=invitations)
+                           invitations=invitations, ongoing=ongoing)
 
 
 @app.route('/pk/challenge', methods=['POST'])
