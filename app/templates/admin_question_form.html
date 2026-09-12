@@ -4,7 +4,7 @@
 <h1>{{ '编辑题目 #' + q.id|string if q.id else '新增题目' }}</h1>
 
 {% if answered %}
-<div class="card" style="border:1px solid #fdba74;background:#fffbeb;margin-bottom:1em;">
+<div class="card card-warn" style="margin-bottom:1em;">
   ⚠ 该题已被作答 <b>{{ answered }}</b> 次（考试+练习）。修改题干/选项后：
   历史成绩单仍按当时答案展示；但之后的练习、PK、错题判定将按<b>新答案</b>判分。
 </div>

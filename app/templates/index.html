@@ -1,14 +1,16 @@
 {% extends 'base.html' %}
 {% block content %}
-<h2>欢迎，{{ cur_user.username }}</h2>
-<div class="card grid">
-  <div><div class="num">{{ stats.total }}</div>题库总题数</div>
-  <div><div class="num">{{ stats.users }}</div>注册用户</div>
-  <div><div class="num">{{ stats.papers }}</div>已完成考试</div>
-  <div><div class="num">{{ stats.my_wrong }}</div>我的未掌握错题</div>
+<div class="home-head">
+  <h2 style="margin:0;">欢迎，{{ cur_user.username }} <span style="font-size:14px;font-family:var(--sans);color:var(--ink-2);font-weight:400;">准备好今天的刷题了吗？</span></h2>
 </div>
-<div class="card">
-  <h3>开始学习</h3>
+<div class="grid home-stats">
+  <div><div class="num">{{ stats.total }}</div><span class="muted">题库总题数</span></div>
+  <div><div class="num">{{ stats.users }}</div><span class="muted">注册用户</span></div>
+  <div><div class="num">{{ stats.papers }}</div><span class="muted">已完成考试</span></div>
+  <div><div class="num" style="color:var(--bad);">{{ stats.my_wrong }}</div><span class="muted">我的未掌握错题</span></div>
+</div>
+<div class="card card-soft">
+  <h3 style="margin-top:0;">开始学习</h3>
   <p>模拟考试每次随机抽取 <b>60 道单选 + 40 道判断</b> 共 100 题，交卷后自动判分并计入错题本。</p>
   <form method="post" action="{{ url_for('exam_start') }}" id="exam-form" class="inline" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
     <label style="font-size:13px;">
@@ -20,7 +22,7 @@
     <input type="hidden" name="abandon" value="">
     <button class="btn" type="submit" id="exam-submit">开始模拟考试</button>
   </form>
-  <a class="btn secondary" href="{{ url_for('practice_home') }}">练习（随机/专项/错题）</a>
+  <a class="btn secondary" href="{{ url_for('practice_home') }}" style="margin-top:10px;">练习（随机 / 专项 / 错题）</a>
 </div>
 {% if cur_user.role == 'student' %}
 {% if my_tasks %}

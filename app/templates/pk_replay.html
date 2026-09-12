@@ -4,7 +4,7 @@
 <h2>🎬 对局回放 · {{ rec.c_name }} VS {{ rec.o_name }}
   <a class="btn small secondary" href="{{ url_for('pk_lobby') }}" style="float:right;">返回大厅</a>
 </h2>
-<div class="card" style="background:linear-gradient(135deg,#f0f7ff,#fef3c7);">
+<div class="card card-warm">
   <div style="display:flex;align-items:center;gap:18px;">
     <b style="color:#e74c3c;">🚗 {{ rec.c_name }}</b>
     <span style="font-size:28px;font-weight:900;">{{ rec.challenger_score or 0 }} : {{ rec.opponent_score or 0 }}</span>

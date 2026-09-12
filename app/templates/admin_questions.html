@@ -5,7 +5,7 @@
 <p class="muted">共 {{ total }} 道{{ '已删' if del_f == '1' else '' }}题，每页 20 题。点击解析框可编辑，失焦自动保存；"编辑"可修改题干/选项/分类/配图；删除为软删除，可从回收站恢复。</p>
 
 {% if pending_total %}
-<div class="card" style="border:1px solid #fdba74;background:#fffbeb;margin:1em 0;">
+<div class="card card-warn" style="margin:1em 0;">
   <h3 style="margin-top:0;">⚠ 待审核纠错上报（{{ pending_total }}）{% if pending_total > 20 %}<span class="muted" style="font-size:13px;">仅显示最新 20 条</span>{% endif %}</h3>
   <table>
     <tr><th>题目ID</th><th>题干</th><th>举报人</th><th>原因</th><th>时间</th><th>操作</th></tr>
