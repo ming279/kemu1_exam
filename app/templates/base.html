@@ -6,74 +6,150 @@
 <title>{% block title %}科目一模拟考试系统{% endblock %}</title>
 <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
-<body>
-<nav class="nav">
-  <a class="brand" href="{{ url_for('index') }}">驾照科目一模拟考试系统</a>
-  {% if cur_user %}
-  <div class="links">
-    <a href="{{ url_for('index') }}">首页</a>
-    <div class="nav-pop" id="nav-exam-wrap">
-      <button class="linklike" type="button" id="nav-exam-trigger">模拟考试 ▾</button>
-      <div class="nav-pop-content" id="nav-exam-pop">
-        <form method="post" action="{{ url_for('exam_start') }}" id="nav-exam-form">
-          <input type="hidden" name="time_limit" id="nav-tl" value="45">
-          <input type="hidden" name="abandon" value="">
-          <div class="nav-pop-title">选择考试模式</div>
-          <label class="nav-pop-opt" data-tl="45">
-            <span class="nav-pop-radio"></span>
-            <div>
-              <div class="nav-pop-opt-name">限时 45 分钟</div>
-              <div class="nav-pop-opt-desc">贴近真实科目一考试节奏</div>
-            </div>
-          </label>
-          <label class="nav-pop-opt" data-tl="0">
-            <span class="nav-pop-radio"></span>
-            <div>
-              <div class="nav-pop-opt-name">不限时</div>
-              <div class="nav-pop-opt-desc">慢慢做，不赶时间</div>
-            </div>
-          </label>
-          <button class="nav-pop-go" type="submit">开始考试 →</button>
-        </form>
-      </div>
-    </div>
-    <a href="{{ url_for('practice_home') }}">练习</a>
-    {% if cur_user.role == 'student' %}<a href="{{ url_for('my_tasks_page') }}">我的任务</a>{% endif %}
-    <a href="{{ url_for('wrongbook') }}">错题本</a>
-    <a href="{{ url_for('favorites_page') }}">⭐ 收藏</a>
-    {% if cur_user.role == 'student' %}<a href="{{ url_for('my_papers') }}">考试记录</a>{% endif %}
-    <a href="{{ url_for('stats') }}">我的统计</a>
-    <a href="{{ url_for('ranking') }}">排名</a>
-    <a href="{{ url_for('pk_lobby') }}">PK挑战</a>
-    <a href="{{ url_for('notifications_page') }}" id="nav-bell" title="站内通知">🔔{% if notif_unread %}<span class="bell-dot">{{ notif_unread }}</span>{% endif %}</a>
-    {% if cur_user.role == 'admin' %}<a href="{{ url_for('admin_users') }}">用户管理</a><a href="{{ url_for('admin_stats') }}">全局统计</a><a href="{{ url_for('admin_questions') }}" style="position:relative;">题目管理{% if pending_reports %}<span class="bell-dot" title="待审核纠错上报">{{ pending_reports }}</span>{% endif %}</a><a href="{{ url_for('admin_tasks') }}">任务管理</a><a href="{{ url_for('admin_wrong_rank') }}">错题排行</a><a href="{{ url_for('admin_answer_data') }}">答题数据</a><a href="{{ url_for('crawl_page') }}">题库采集</a><a href="{{ url_for('ai_page') }}">AI 验证</a>{% endif %}
-    <span class="muted">{% if study_streak %}<span class="streak-chip" title="连续学习天数">🔥{{ study_streak }}天</span>{% endif %}{{ cur_user.username }}（{{ '管理员' if cur_user.role == 'admin' else '考生' }}）</span>
-    <button class="linklike" id="btn-dark" title="深色模式">🌙</button>
-    <a href="{{ url_for('logout') }}">退出</a>
-  </div>
-  {% endif %}
-</nav>
-<div class="container">
-  {% with msgs = get_flashed_messages(with_categories=true) %}
-    {% for cat, m in msgs %}<div class="flash {{ cat }}">{{ m }}</div>{% endfor %}
-  {% endwith %}
-  {% if ongoing_exam %}
-  <div id="resume-banner" class="card">
-    <span style="font-size:20px;">🏁</span>
-    <b>你有一场未完成的考试：{{ ongoing_exam.name }}</b>
-    <span class="muted">已答 {{ ongoing_exam.ans_n }}/{{ ongoing_exam.total_n }} 题</span>
-    {% if ongoing_exam.paused %}
-    <span class="tag-bad">⏸ 已暂停（练习任务）</span>
-    {% elif ongoing_exam.remain_sec is not none %}
-    <span>剩余 <b id="banner-cd" data-remain="{{ ongoing_exam.remain_sec }}">--:--:--</b></span>
-    {% else %}
-    <span class="muted">不限时</span>
+{% set ep = request.endpoint or '' %}
+<body class="{{ 'anon' if not cur_user else '' }}">
+{% if cur_user %}
+<div class="sb-overlay" id="sb-overlay"></div>
+<aside class="sidebar">
+  <a class="sb-brand" href="{{ url_for('index') }}">
+    <span class="logo">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/></svg>
+    </span>
+    <span><b>科目一考试</b><span>KEMU1 EXAM</span></span>
+  </a>
+
+  <nav class="sb-nav">
+    <div class="sb-group">学习</div>
+    <a class="sb-item{{ ' active' if ep == 'index' }}" href="{{ url_for('index') }}">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 22V12h6v10"/></svg>首页
+    </a>
+    <a class="sb-item" href="{{ url_for('index') }}#exam-start" data-group="学习">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5z"/><path d="M14 2v6h6"/><path d="m9 13 2 2 4-4"/></svg>模拟考试
+    </a>
+    <a class="sb-item{{ ' active' if ep.startswith('practice') }}" href="{{ url_for('practice_home') }}">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>练习
+    </a>
+    {% if cur_user.role == 'student' %}
+    <a class="sb-item{{ ' active' if ep in ['my_tasks_page','task_start'] or ep.startswith('task') }}" href="{{ url_for('my_tasks_page') }}">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/><path d="m9 16 2 2 4-4"/></svg>我的任务
+    </a>
     {% endif %}
-    <a class="btn small" href="{{ url_for('exam_page', pid=ongoing_exam.pid) }}">继续考试 →</a>
+    <a class="sb-item{{ ' active' if ep == 'wrongbook' }}" href="{{ url_for('wrongbook') }}">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>错题本
+    </a>
+    <a class="sb-item{{ ' active' if ep.startswith('favorite') }}" href="{{ url_for('favorites_page') }}">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z"/></svg>我的收藏
+    </a>
+    {% if cur_user.role == 'student' %}
+    <a class="sb-item{{ ' active' if ep in ['my_papers','exam_result'] }}" href="{{ url_for('my_papers') }}">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M8 17V9"/><path d="M13 17V5"/><path d="M18 17v-4"/></svg>考试记录
+    </a>
+    {% endif %}
+    <a class="sb-item{{ ' active' if ep == 'stats' }}" href="{{ url_for('stats') }}">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>学习统计
+    </a>
+    <a class="sb-item{{ ' active' if ep == 'ranking' }}" href="{{ url_for('ranking') }}">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 21h8"/><path d="M12 17v4"/><path d="M7 4h10v5a5 5 0 0 1-10 0z"/><path d="M7 6H4a1 1 0 0 0-1 1v1a2 2 0 0 0 2 2h2"/><path d="M17 6h3a1 1 0 0 1 1 1v1a2 2 0 0 1-2 2h-2"/></svg>排行榜
+    </a>
+    <a class="sb-item{{ ' active' if ep.startswith('pk') }}" href="{{ url_for('pk_lobby') }}">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 17.5 3 6V3h3l11.5 11.5"/><path d="M13 19l6-6"/><path d="m16 16 4 4"/><path d="m19 21 2-2"/><path d="M14.5 6.5 18 3h3v3l-3.5 3.5"/></svg>PK 对战
+    </a>
+
+    {% if cur_user.role == 'admin' %}
+    <div class="sb-group">管理</div>
+    <a class="sb-item{{ ' active' if ep.startswith('admin_question') }}" href="{{ url_for('admin_questions') }}">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14a9 3 0 0 0 18 0V5"/><path d="M3 12a9 3 0 0 0 18 0"/></svg>题目管理
+      {% if pending_reports %}<span class="sb-badge">{{ pending_reports }}</span>{% endif %}
+    </a>
+    <a class="sb-item{{ ' active' if ep.startswith('admin_user') }}" href="{{ url_for('admin_users') }}">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>用户管理
+    </a>
+    <a class="sb-item{{ ' active' if ep.startswith('admin_task') }}" href="{{ url_for('admin_tasks') }}">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/></svg>任务管理
+    </a>
+    <a class="sb-item{{ ' active' if ep == 'admin_wrong_rank' }}" href="{{ url_for('admin_wrong_rank') }}">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M19 9l-5 5-4-4-3 3"/></svg>错题排行
+    </a>
+    <a class="sb-item{{ ' active' if ep == 'admin_answer_data' }}" href="{{ url_for('admin_answer_data') }}">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>答题数据
+    </a>
+    <a class="sb-item{{ ' active' if ep == 'admin_stats' }}" href="{{ url_for('admin_stats') }}">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M8 17V9"/><path d="M13 17V5"/><path d="M18 17v-4"/></svg>全局统计
+    </a>
+    <a class="sb-item{{ ' active' if ep == 'crawl_page' }}" href="{{ url_for('crawl_page') }}">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>题库采集
+    </a>
+    <a class="sb-item{{ ' active' if ep == 'ai_page' }}" href="{{ url_for('ai_page') }}">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"/><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/></svg>AI 验证
+    </a>
+    {% endif %}
+  </nav>
+
+  <div class="sb-foot">
+    <div class="sb-user">
+      <span class="avatar">{{ (cur_user.real_name or cur_user.username)[0] }}</span>
+      <span>
+        <span class="n">{{ cur_user.real_name or cur_user.username }}</span>
+        <span class="r">{{ '管理员' if cur_user.role == 'admin' else '学员' }}</span>
+      </span>
+    </div>
   </div>
-  {% endif %}
-  {% block content %}{% endblock %}
+</aside>
+{% endif %}
+
+<div class="app-main">
+{% if cur_user %}
+  <header class="topbar">
+    <button class="icon-btn sb-toggle" id="sb-toggle" title="菜单">
+      <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
+    </button>
+    <div class="crumb" id="crumb">学习中心</div>
+    <div class="topbar-right">
+      {% if study_streak %}<span class="streak-chip" title="连续学习天数">连续 {{ study_streak }} 天</span>{% endif %}
+      <a class="icon-btn{{ ' active' if ep.startswith('notification') }}" id="nav-bell" href="{{ url_for('notifications_page') }}" title="站内通知">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
+        {% if notif_unread %}<span class="bell-dot">{{ notif_unread }}</span>{% endif %}
+      </a>
+      <button class="icon-btn" id="btn-dark" title="深色模式">
+        <svg id="dark-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9z"/></svg>
+      </button>
+      <span style="width:1px;height:22px;background:var(--line);margin:0 4px;"></span>
+      <a class="btn secondary small" href="{{ url_for('logout') }}">退出</a>
+    </div>
+  </header>
+{% endif %}
+
+  <main class="container">
+    {% with msgs = get_flashed_messages(with_categories=true) %}
+      {% for cat, m in msgs %}<div class="flash {{ cat }}">{{ m }}</div>{% endfor %}
+    {% endwith %}
+    {% if ongoing_exam %}
+    <div id="resume-banner" class="alert">
+      <div class="alert-ic">
+        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
+      </div>
+      <div class="alert-tx">
+        <div class="t">你有一场未完成的考试：{{ ongoing_exam.name }}</div>
+        <div class="m">
+          <span>已答 <b class="num">{{ ongoing_exam.ans_n }}/{{ ongoing_exam.total_n }}</b> 题</span>
+          {% if ongoing_exam.paused %}
+          <span class="tag-bad">已暂停（练习任务）</span>
+          {% elif ongoing_exam.remain_sec is not none %}
+          <span>剩余 <b id="banner-cd" data-remain="{{ ongoing_exam.remain_sec }}">--:--:--</b></span>
+          {% else %}
+          <span>不限时</span>
+          {% endif %}
+        </div>
+      </div>
+      <a class="btn small" href="{{ url_for('exam_page', pid=ongoing_exam.pid) }}">继续考试
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+      </a>
+    </div>
+    {% endif %}
+    {% block content %}{% endblock %}
+  </main>
 </div>
+
 {% block scripts %}
 <script>
 /* 未完成考试横幅倒计时（后端按服务器时间算出剩余秒，前端仅递减显示） */
@@ -99,59 +175,21 @@
   tick();
   setInterval(tick, 1000);
 })();
-</script>
-<script>
-/* 方案3：模拟考试入口——有旧卷时弹确认 */
+
+/* 模拟考试入口——有旧卷时弹确认（首页 #exam-form） */
 (function() {
   var INFO = {{ in_progress_info|tojson if in_progress_info else 'null' }};
   if (!INFO) return;
-  var forms = ['exam-form', 'nav-exam-form'];
-  forms.forEach(function(fid) {
-    var form = document.getElementById(fid);
-    if (!form) return;
-    form.addEventListener('submit', function(e) {
-      // 如果已经设置过 abandon，直接提交
-      if (form.abandon.value) return;
-      var ans_count = INFO.ans_count || 0;
-      var started = INFO.started_at ? INFO.started_at.substring(0,16).replace('T',' ') : '';
-      var msg = '你还有一份未完成的模拟考试（' + started + '，已答 ' + ans_count + ' 题）。\n\n'
-              + '点击"确定"继续上次作答，点击"取消"放弃旧卷开新卷。';
-      if (confirm(msg)) {
-        // 继续：abandon 保持空
-        return;
-      } else {
-        // 放弃旧卷：设置 abandon 标志
-        form.abandon.value = '1';
-      }
-    });
-  });
-})();
-
-/* 导航栏模拟考试气泡 */
-(function() {
-  var wrap = document.getElementById('nav-exam-wrap');
-  var trigger = document.getElementById('nav-exam-trigger');
-  if (!wrap || !trigger) return;
-  var hiddenTl = document.getElementById('nav-tl');
-  var opts = wrap.querySelectorAll('.nav-pop-opt');
-  // 默认选中 45 分钟
-  var curActive = wrap.querySelector('.nav-pop-opt[data-tl="45"]');
-  curActive.classList.add('active');
-  opts.forEach(function(opt) {
-    opt.addEventListener('click', function(e) {
-      e.preventDefault();
-      opts.forEach(function(o) { o.classList.remove('active'); });
-      opt.classList.add('active');
-      hiddenTl.value = opt.dataset.tl;
-    });
-  });
-  trigger.addEventListener('click', function(e) {
-    e.stopPropagation();
-    wrap.classList.toggle('open');
-  });
-  // 点击外部关闭
-  document.addEventListener('click', function(e) {
-    if (!wrap.contains(e.target)) wrap.classList.remove('open');
+  var form = document.getElementById('exam-form');
+  if (!form) return;
+  form.addEventListener('submit', function() {
+    if (form.abandon.value) return;
+    var ans_count = INFO.ans_count || 0;
+    var started = INFO.started_at ? INFO.started_at.substring(0,16).replace('T',' ') : '';
+    var msg = '你还有一份未完成的模拟考试（' + started + '，已答 ' + ans_count + ' 题）。\n\n'
+            + '点击"确定"继续上次作答，点击"取消"放弃旧卷开新卷。';
+    if (confirm(msg)) return;
+    form.abandon.value = '1';
   });
 })();
 
@@ -163,46 +201,30 @@
   document.body.appendChild(lb);
   var img = lb.querySelector('#lb-img');
 
-  // 隐藏参考物：测量浏览器实际 zoom 比例
   var probe = document.createElement('div');
   probe.style.cssText = 'position:absolute;left:-9999px;top:-9999px;width:1000px;height:1px;';
   document.body.appendChild(probe);
 
-  function getZoom() {
-    // 1000px 在 zoom=100% 时应该渲染为 1000px
-    return 1000 / probe.offsetWidth;
-  }
+  function getZoom() { return 1000 / probe.offsetWidth; }
   function applyZoomCompensate() {
     var z = getZoom();
-    // 反向 scale 抵消浏览器缩放，让 lb-overlay 保持真实像素大小
     lb.style.transform = 'scale(' + z + ')';
     lb.style.transformOrigin = 'top left';
   }
-
   function open(src) {
-    var maxW = window.innerWidth * 0.92;
-    var maxH = window.innerHeight * 0.88;
-    img.style.maxWidth = maxW + 'px';
-    img.style.maxHeight = maxH + 'px';
+    img.style.maxWidth = (window.innerWidth * 0.92) + 'px';
+    img.style.maxHeight = (window.innerHeight * 0.88) + 'px';
     img.src = src;
     applyZoomCompensate();
     lb.classList.add('show');
   }
-  function close() {
-    lb.classList.remove('show');
-    img.src = '';
-  }
-
-  // 浏览器缩放时重新计算
+  function close() { lb.classList.remove('show'); img.src = ''; }
   window.addEventListener('resize', function() {
     if (lb.classList.contains('show')) applyZoomCompensate();
   });
-
   document.addEventListener('click', function(e) {
     if (e.target.classList && e.target.classList.contains('qimg')) {
-      open(e.target.src);
-      e.preventDefault();
-      return;
+      open(e.target.src); e.preventDefault(); return;
     }
     if (e.target === lb || e.target.id === 'lb-close') close();
   });
@@ -210,8 +232,43 @@
     if (e.key === 'Escape' && lb.classList.contains('show')) close();
   });
 })();
+
+/* 顶栏面包屑：跟随侧栏当前栏目 */
+(function () {
+  var active = document.querySelector('.sb-item.active');
+  var crumb = document.getElementById('crumb');
+  if (active && crumb) {
+    var group = active.closest('.sb-nav') ?
+      (active.previousElementSibling && active.previousElementSibling.classList.contains('sb-group')
+        ? active.previousElementSibling.textContent : null) : null;
+    var g = group;
+    if (!g) {
+      var prev = active;
+      while ((prev = prev.previousElementSibling)) {
+        if (prev.classList && prev.classList.contains('sb-group')) { g = prev.textContent; break; }
+      }
+    }
+    var label = active.textContent.trim();
+    crumb.innerHTML = (g ? g + ' / ' : '') + '<b></b>';
+    crumb.querySelector('b').textContent = label;
+  }
+})();
+
+/* 移动端侧栏抽屉 */
+(function () {
+  var btn = document.getElementById('sb-toggle');
+  var overlay = document.getElementById('sb-overlay');
+  if (!btn || !overlay) return;
+  function close(){ document.body.classList.remove('sb-open'); }
+  btn.addEventListener('click', function(){ document.body.classList.toggle('sb-open'); });
+  overlay.addEventListener('click', close);
+  document.querySelectorAll('.sb-item').forEach(function(a){
+    a.addEventListener('click', close);
+  });
+})();
 </script>
 {% endblock %}
+
 {% if cur_user %}
 <script src="{{ url_for('static', filename='socket.io.min.js') }}"></script>
 <script>
@@ -232,11 +289,7 @@
       }
       var t = document.createElement('div');
       t.className = 'noti-toast';
-      var icon = document.createTextNode('🔔 ');
-      t.appendChild(icon);
-      var span = document.createElement('span');
-      span.textContent = d.content;
-      t.appendChild(span);
+      t.textContent = '🔔 ' + d.content;
       t.onclick = function () { location.href = '{{ url_for("notifications_page") }}'; };
       document.body.appendChild(t);
       requestAnimationFrame(function () { t.classList.add('show'); });
@@ -249,8 +302,9 @@
 })();
 </script>
 {% endif %}
+
 <script>
-/* 题目收藏 ☆/★ 全局切换：任何页面放 .fav-btn[data-qid] 即可，无需各页写脚本 */
+/* 题目收藏 ☆/★ 全局切换 */
 (function () {
   document.addEventListener('click', function (e) {
     var btn = e.target.closest && e.target.closest('.fav-btn');
@@ -265,7 +319,6 @@
         btn.dataset.fav = d.fav ? '1' : '0';
         btn.textContent = d.fav ? '★' : '☆';
         btn.title = d.fav ? '取消收藏' : '收藏本题';
-        // 收藏夹列表页：取消收藏后整卡淡出移除
         var card = btn.closest('.fav-card');
         if (card && !d.fav) {
           card.style.transition = 'opacity .3s';
@@ -277,30 +330,18 @@
       .finally(function () { delete btn.dataset.busy; });
   });
 })();
-</script>
-<script>
-/* 当前页导航高亮：胶囊底色标示所在栏目 */
-(function () {
-  var path = location.pathname;
-  document.querySelectorAll('.nav .links > a').forEach(function (a) {
-    var p = a.getAttribute('href');
-    if (p && p !== '/' && path.indexOf(p) === 0) a.classList.add('cur');
-  });
-  var home = document.querySelector('.nav .links > a[href="' + {{ url_for('index')|tojson }} + '"]');
-  if (home && path === '/') home.classList.add('cur');
-})();
-</script>
-<script>
-/* C23 深色模式：localStorage 记忆，全站生效 */
+
+/* 深色模式：localStorage 记忆，全站生效 */
 (function () {
   var btn = document.getElementById('btn-dark');
-  if (!btn) return;
+  var MOON = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9z"/></svg>';
+  var SUN  = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>';
   function apply(dark) {
     document.body.classList.toggle('dark', dark);
-    btn.textContent = dark ? '☀️' : '🌙';
+    if (btn) btn.innerHTML = dark ? SUN : MOON;
   }
   apply(localStorage.getItem('darkmode') === '1');
-  btn.addEventListener('click', function () {
+  if (btn) btn.addEventListener('click', function () {
     var dark = !document.body.classList.contains('dark');
     localStorage.setItem('darkmode', dark ? '1' : '0');
     apply(dark);

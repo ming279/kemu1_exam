@@ -1,27 +1,28 @@
 {% extends 'base.html' %}
 {% block content %}
-<div class="auth-wrap">
-  <div class="auth-hero">
-    <div class="ah-badge">DRIVING TEST</div>
-    <h1>欢迎回到<br><em>驾照科目一</em>模拟考场</h1>
-    <p class="ah-sub">2300+ 真题题库，随机组卷、自动判分、错题复盘。<br>像看公路路牌一样，轻松拿下科目一。</p>
-    <div class="ah-stats">
-      <div><div class="n">100</div><div class="l">题 / 场</div></div>
-      <div><div class="n">45<span style="font-size:15px;">min</span></div><div class="l">真实限时</div></div>
-      <div><div class="n">90</div><div class="l">合格分数线</div></div>
+<div class="auth-page">
+  <div class="auth-card">
+    <div class="auth-logo">
+      <span class="logo">
+        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/></svg>
+      </span>
+      <span><b>科目一模拟考试系统</b><span>机动车驾驶人考试平台</span></span>
     </div>
-  </div>
-  <div class="card auth auth-form" style="margin:0;">
-    <div class="auth-lights"><i></i><i></i><i></i></div>
-    <h2>登录</h2>
+    <h1>欢迎回来</h1>
+    <p class="auth-sub">登录后继续你的刷题进度</p>
     <form method="post">
-      <label>账号</label>
-      <input type="text" name="username" required autocomplete="username">
-      <label>密码</label>
-      <input type="password" name="password" required autocomplete="current-password">
-      <button class="btn" type="submit" style="width:100%;margin-top:4px;">登录</button>
-      <a class="btn secondary" href="{{ url_for('register') }}" style="width:100%;text-align:center;margin-top:10px;">注册新账号</a>
+      <div class="field">
+        <label>账号</label>
+        <input type="text" name="username" required autocomplete="username" placeholder="请输入用户名">
+      </div>
+      <div class="field">
+        <label>密码</label>
+        <input type="password" name="password" required autocomplete="current-password" placeholder="请输入密码">
+      </div>
+      <button class="btn" type="submit">登录</button>
+      <a class="btn secondary" href="{{ url_for('register') }}" style="width:100%;margin-top:10px;">注册新账号</a>
     </form>
+    <div class="auth-foot">题库 2,300+ 题 · 满分 100 分 · 90 分合格</div>
   </div>
 </div>
 {% endblock %}

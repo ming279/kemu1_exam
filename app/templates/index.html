@@ -1,32 +1,92 @@
 {% extends 'base.html' %}
 {% block content %}
 <div class="home-head">
-  <h2 style="margin:0;">欢迎，{{ cur_user.username }} <span style="font-size:14px;font-family:var(--sans);color:var(--ink-2);font-weight:400;">准备好今天的刷题了吗？</span></h2>
+  <h2 style="margin:0;">欢迎，{{ cur_user.real_name or cur_user.username }}</h2>
+  <p class="muted" style="margin:3px 0 0;">准备好今天的刷题了吗？</p>
 </div>
-<div class="grid home-stats">
-  <div><div class="num">{{ stats.total }}</div><span class="muted">题库总题数</span></div>
-  <div><div class="num">{{ stats.users }}</div><span class="muted">注册用户</span></div>
-  <div><div class="num">{{ stats.papers }}</div><span class="muted">已完成考试</span></div>
-  <div><div class="num" style="color:var(--bad);">{{ stats.my_wrong }}</div><span class="muted">我的未掌握错题</span></div>
+
+<div class="stat-grid" style="margin-bottom:22px;">
+  <div class="stat-card">
+    <div><div class="stat-label">题库总题数</div><div class="stat-value num">{{ stats.total }}</div></div>
+    <div class="stat-ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></div>
+  </div>
+  <div class="stat-card">
+    <div><div class="stat-label">注册用户</div><div class="stat-value num">{{ stats.users }}</div></div>
+    <div class="stat-ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div>
+  </div>
+  <div class="stat-card">
+    <div><div class="stat-label">已完成考试</div><div class="stat-value num">{{ stats.papers }}</div></div>
+    <div class="stat-ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M9 11l3 3L22 4"/></svg></div>
+  </div>
+  <div class="stat-card">
+    <div><div class="stat-label">我的未掌握错题</div><div class="stat-value num danger">{{ stats.my_wrong }}</div></div>
+    <div class="stat-ic amber"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg></div>
+  </div>
 </div>
-<div class="card card-soft">
-  <h3 style="margin-top:0;">开始学习</h3>
-  <p>模拟考试每次随机抽取 <b>60 道单选 + 40 道判断</b> 共 100 题，交卷后自动判分并计入错题本。</p>
-  <form method="post" action="{{ url_for('exam_start') }}" id="exam-form" class="inline" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-    <label style="font-size:13px;">
-      <input type="radio" name="time_limit" value="45" checked> 限时 45 分钟（真实考试节奏）
-    </label>
-    <label style="font-size:13px;">
-      <input type="radio" name="time_limit" value="0"> 不限时
-    </label>
-    <input type="hidden" name="abandon" value="">
-    <button class="btn" type="submit" id="exam-submit">开始模拟考试</button>
-  </form>
-  <a class="btn secondary" href="{{ url_for('practice_home') }}" style="margin-top:10px;">练习（随机 / 专项 / 错题）</a>
+
+<div class="study-grid">
+  <div class="card" id="exam-start">
+    <h3 style="margin-top:0;display:flex;align-items:center;gap:8px;">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5z"/><path d="M14 2v6h6"/><path d="m9 13 2 2 4-4"/></svg>
+      模拟考试
+    </h3>
+    <div class="rule-list">
+      <div class="rule-row"><span class="dot"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></span><span>每次随机抽取 <b>60 道单选 + 40 道判断</b>，共 100 题</span></div>
+      <div class="rule-row"><span class="dot"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></span><span>交卷后自动判分，错题自动收入错题本</span></div>
+    </div>
+    <div class="divider"></div>
+    <form method="post" action="{{ url_for('exam_start') }}" id="exam-form">
+      <div class="mode-label">考试模式</div>
+      <label class="mode-opt selected">
+        <input type="radio" name="time_limit" value="45" checked>
+        <span class="radio-dot"></span>
+        <span><span class="mode-t">限时 45 分钟</span><br><span class="mode-d">贴合真实科目一考试节奏</span></span>
+      </label>
+      <label class="mode-opt">
+        <input type="radio" name="time_limit" value="0">
+        <span class="radio-dot"></span>
+        <span><span class="mode-t">不限时</span><br><span class="mode-d">慢慢做，不赶时间</span></span>
+      </label>
+      <input type="hidden" name="abandon" value="">
+      <button class="btn" type="submit" id="exam-submit" style="width:100%;height:42px;margin-top:6px;">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.14v14l11-7z"/></svg>开始模拟考试
+      </button>
+    </form>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0;display:flex;align-items:center;gap:8px;">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>
+      练习
+    </h3>
+    <div style="margin-top:13px;">
+      <a class="entry-row" href="{{ url_for('practice_home') }}">
+        <span class="ic"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></span>
+        <span><span class="t">随机练习</span><br><span class="d">随机抽题，巩固手感</span></span>
+        <svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+      </a>
+      <a class="entry-row" href="{{ url_for('wrongbook') }}">
+        <span class="ic"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg></span>
+        <span><span class="t">错题练习</span><br><span class="d">聚焦未掌握的错题</span></span>
+        <svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+      </a>
+      <a class="entry-row" href="{{ url_for('favorites_page') }}">
+        <span class="ic"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z"/></svg></span>
+        <span><span class="t">我的收藏</span><br><span class="d">收藏题集中复习</span></span>
+        <svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+      </a>
+      <a class="entry-row" href="{{ url_for('stats') }}">
+        <span class="ic"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M8 17V9"/><path d="M13 17V5"/><path d="M18 17v-4"/></svg></span>
+        <span><span class="t">学习统计</span><br><span class="d">查看答题趋势与薄弱点</span></span>
+        <svg class="chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+      </a>
+    </div>
+  </div>
 </div>
+
 {% if cur_user.role == 'student' %}
 {% if my_tasks %}
-<div class="card">
+<div class="card" style="margin-top:22px;">
   <h3>待完成任务（{{ my_tasks|length }}）</h3>
   <p class="muted">老师布置的任务，完成后计入成绩。</p>
   <table>
@@ -53,7 +113,7 @@
 </div>
 {% endif %}
 {% if my_done_tasks %}
-<div class="card">
+<div class="card" style="margin-top:22px;">
   <h3>已完成任务（{{ my_done_tasks|length }}）<a class="btn small secondary" href="{{ url_for('my_tasks_page') }}" style="float:right;">我的任务页</a></h3>
   <table>
     <tr><th>任务标题</th><th>模式</th><th>得分</th><th>用时</th><th>交卷时间</th><th>操作</th></tr>
