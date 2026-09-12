@@ -5,20 +5,20 @@
 
 {% if ongoing %}
 {% set opp_real = ((ongoing.o_real if me.id == ongoing.challenger_uid else ongoing.c_real) or '同学') %}
-<div class="card" style="border:1px solid #fbbf24;background:linear-gradient(135deg,#fffbeb,#fef3c7);display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+<div class="card card-warn" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
   {% if ongoing.status == 'playing' %}
   <span style="font-size:22px;">🏁</span>
-  <b style="color:#b45309;">你正在与「{{ opp_real }}」进行 PK 对局！</b>
-  <span style="color:#92400e;">离开不会判负、进度不丢失，回到房间即可继续战斗</span>
+  <b>你正在与「{{ opp_real }}」进行 PK 对局！</b>
+  <span class="muted">离开不会判负、进度不丢失，回到房间即可继续战斗</span>
   {% else %}
   <span style="font-size:22px;">⏳</span>
-  <b style="color:#b45309;">与「{{ opp_real }}」的对局待开局（等待准备）</b>
+  <b>与「{{ opp_real }}」的对局待开局（等待准备）</b>
   {% endif %}
   <a href="{{ url_for('pk_room', pid=ongoing.id) }}" class="btn" style="background:#f59e0b;">回到战场 →</a>
 </div>
 {% endif %}
 
-<div class="card" style="background:linear-gradient(135deg,#f0f7ff,#fef3c7);">
+<div class="card card-warm">
   <h3>我的战绩</h3>
   <div class="grid" style="grid-template-columns:repeat(4,1fr);">
     <div><div class="num">{{ badge[0] }} {{ badge[1] }}</div>当前段位</div>

@@ -5,7 +5,7 @@
 
 {% if students is not none %}
 <!-- 管理员：发通知 -->
-<div class="card" style="border:1px solid #bfdbfe;background:#f8fbff;">
+<div class="card card-info">
   <h3 style="margin-top:0;">📢 发送通知</h3>
   <form method="post" action="{{ url_for('notification_send') }}">
     <div style="margin-bottom:10px;">

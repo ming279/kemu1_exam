@@ -58,21 +58,18 @@
     {% for cat, m in msgs %}<div class="flash {{ cat }}">{{ m }}</div>{% endfor %}
   {% endwith %}
   {% if ongoing_exam %}
-  <div id="resume-banner" class="card"
-       style="border:1px solid #f59e0b;background:#fffbeb;margin-bottom:14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+  <div id="resume-banner" class="card">
     <span style="font-size:20px;">🏁</span>
     <b>你有一场未完成的考试：{{ ongoing_exam.name }}</b>
     <span class="muted">已答 {{ ongoing_exam.ans_n }}/{{ ongoing_exam.total_n }} 题</span>
     {% if ongoing_exam.paused %}
     <span class="tag-bad">⏸ 已暂停（练习任务）</span>
     {% elif ongoing_exam.remain_sec is not none %}
-    <span>剩余 <b id="banner-cd" data-remain="{{ ongoing_exam.remain_sec }}"
-               style="font-variant-numeric:tabular-nums;color:#dc2626;">--:--:--</b></span>
+    <span>剩余 <b id="banner-cd" data-remain="{{ ongoing_exam.remain_sec }}">--:--:--</b></span>
     {% else %}
     <span class="muted">不限时</span>
     {% endif %}
-    <a class="btn small" href="{{ url_for('exam_page', pid=ongoing_exam.pid) }}"
-       style="margin-left:auto;">继续考试 →</a>
+    <a class="btn small" href="{{ url_for('exam_page', pid=ongoing_exam.pid) }}">继续考试 →</a>
   </div>
   {% endif %}
   {% block content %}{% endblock %}
@@ -279,6 +276,18 @@
       .catch(function () { alert('网络异常，请重试'); })
       .finally(function () { delete btn.dataset.busy; });
   });
+})();
+</script>
+<script>
+/* 当前页导航高亮：胶囊底色标示所在栏目 */
+(function () {
+  var path = location.pathname;
+  document.querySelectorAll('.nav .links > a').forEach(function (a) {
+    var p = a.getAttribute('href');
+    if (p && p !== '/' && path.indexOf(p) === 0) a.classList.add('cur');
+  });
+  var home = document.querySelector('.nav .links > a[href="' + {{ url_for('index')|tojson }} + '"]');
+  if (home && path === '/') home.classList.add('cur');
 })();
 </script>
 <script>

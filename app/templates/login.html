@@ -1,14 +1,27 @@
 {% extends 'base.html' %}
 {% block content %}
-<div class="card auth">
-  <h2>登录</h2>
-  <form method="post">
-    <label>账号</label>
-    <input type="text" name="username" required>
-    <label>密码</label>
-    <input type="password" name="password" required>
-    <button class="btn" type="submit">登录</button>
-    <a class="btn secondary" href="{{ url_for('register') }}">注册</a>
-  </form>
+<div class="auth-wrap">
+  <div class="auth-hero">
+    <div class="ah-badge">DRIVING TEST</div>
+    <h1>欢迎回到<br><em>驾照科目一</em>模拟考场</h1>
+    <p class="ah-sub">2300+ 真题题库，随机组卷、自动判分、错题复盘。<br>像看公路路牌一样，轻松拿下科目一。</p>
+    <div class="ah-stats">
+      <div><div class="n">100</div><div class="l">题 / 场</div></div>
+      <div><div class="n">45<span style="font-size:15px;">min</span></div><div class="l">真实限时</div></div>
+      <div><div class="n">90</div><div class="l">合格分数线</div></div>
+    </div>
+  </div>
+  <div class="card auth auth-form" style="margin:0;">
+    <div class="auth-lights"><i></i><i></i><i></i></div>
+    <h2>登录</h2>
+    <form method="post">
+      <label>账号</label>
+      <input type="text" name="username" required autocomplete="username">
+      <label>密码</label>
+      <input type="password" name="password" required autocomplete="current-password">
+      <button class="btn" type="submit" style="width:100%;margin-top:4px;">登录</button>
+      <a class="btn secondary" href="{{ url_for('register') }}" style="width:100%;text-align:center;margin-top:10px;">注册新账号</a>
+    </form>
+  </div>
 </div>
 {% endblock %}
