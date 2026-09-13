@@ -46,6 +46,11 @@ var STEPS = {{ steps|tojson }};
 var NAME_C = {{ rec.c_name|tojson }};
 var NAME_O = {{ rec.o_name|tojson }};
 var cur = 0, playTimer = null;
+function esc(s) {   // 姓名/选项内容入 innerHTML 前转义，防存储型 XSS
+  return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+  });
+}
 
 function render(i) {
   cur = Math.max(0, Math.min(STEPS.length - 1, i));
@@ -61,10 +66,10 @@ function render(i) {
     div.className = 'opt';
     var isAns = s.correct.indexOf(o.label) >= 0;
     var cHit = s.c_answer === o.label, oHit = s.o_answer === o.label;
-    div.innerHTML = o.label + '、' + o.content +
+    div.innerHTML = esc(o.label) + '、' + esc(o.content) +
       (isAns ? ' <span class="tag-ok">✔ 正确答案</span>' : '') +
-      (cHit ? ' <span style="color:#e74c3c;font-weight:700;">◀ ' + NAME_C + '</span>' : '') +
-      (oHit ? ' <span style="color:#3b82f6;font-weight:700;">◀ ' + NAME_O + '</span>' : '');
+      (cHit ? ' <span style="color:#e74c3c;font-weight:700;">◀ ' + esc(NAME_C) + '</span>' : '') +
+      (oHit ? ' <span style="color:#3b82f6;font-weight:700;">◀ ' + esc(NAME_O) + '</span>' : '');
     box.appendChild(div);
   });
   setChip('rv-ca', NAME_C, s.c_answer, s.c_ok);

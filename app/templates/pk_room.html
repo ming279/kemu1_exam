@@ -46,6 +46,16 @@ body.dark #taunt-menu button:hover { background:#1e3a5f; }
 .cheer-btn.cd { opacity:.45; pointer-events:none; }
 body.dark .cheer-btn { background:#2e1065; border-color:#4c1d95; color:#c4b5fd; }
 
+/* 深色模式适配：选项按钮/房间码盒等硬编码浅色在暗色下白字白底不可读 */
+.opt-btn { color:var(--fg); }
+body.dark .opt-btn { background:#18181b; border-color:var(--line-strong); color:var(--fg); }
+body.dark .opt-btn:hover:not(:disabled) { background:#1e3a5f; border-color:var(--brand); }
+body.dark .opt-btn.correct { background:#052e16; border-color:var(--ok); color:#86efac; }
+body.dark .opt-btn.wrong { background:#450a0a; border-color:var(--bad); color:#fca5a5; }
+body.dark .room-code-box { background:#0f0f12; border-color:var(--line-strong); }
+body.dark .room-code-box .rc-label { color:var(--fg-2); }
+body.dark #taunt-menu { background:#18181b; border-color:var(--line-strong); }
+
 /* 赛道内聊天气泡流 */
 #chat-flow { position:absolute; left:8px; right:8px; bottom:46px; z-index:8;
   display:flex; flex-direction:column-reverse; gap:5px; pointer-events:none; }
@@ -352,6 +362,11 @@ var THEME = {{ theme|tojson }};                              // C16 赛道皮肤
 var socket = io();
 var myAnswered = false;
 var timerHandle = null;
+function esc(s) {   // 姓名等文本入 innerHTML 前转义，防存储型 XSS
+  return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+  });
+}
 
 /* ---- C16 赛道皮肤调色板（day/night/rain/desert） ---- */
 var THEMES = {
@@ -1233,7 +1248,7 @@ socket.on('watch_sync', function(d) {
     btns.forEach(function(b) {
       if (b.textContent.charAt(0) === label) {
         b.innerHTML += ' <span style="color:' + (side === 'c' ? '#ef4444' : '#3b82f6') +
-          ';font-weight:700;">◀ ' + name + '</span>';
+          ';font-weight:700;">◀ ' + esc(name) + '</span>';
       }
     });
   });
@@ -1271,6 +1286,10 @@ socket.on('pk_rejoin', function(d) {
     document.getElementById('q-stem').insertAdjacentHTML('afterend',
       '<div class="rejoin-hint" style="color:#d97706;font-size:13px;font-weight:700;margin:6px 0;">' +
       '✓ 本题已作答' + (d.opp_answered ? '，双方均已提交' : '，等待对手…') + '</div>');
+  } else if (d.locked) {
+    // 题目已锁定/答案已揭晓（如超时后重连）：禁用作答，等待下一题
+    myAnswered = true;
+    document.querySelectorAll('.opt-btn').forEach(function(b) { b.disabled = true; });
   } else if (d.opp_answered) {
     document.getElementById('q-stem').insertAdjacentHTML('afterend',
       '<div class="rejoin-hint" style="color:#3b82f6;font-size:13px;font-weight:700;margin:6px 0;">' +
@@ -1519,7 +1538,7 @@ socket.on('game_over', function(d) {
     /* ===== C14 观战者结算：只展示赛果，不参与再战 ===== */
     ov.classList.add('show');
     title.innerHTML = d.winner
-      ? '<span class="vh-normal">' + (d.winner === d.challenger ? NAME_C : NAME_O) + ' 获胜！</span>'
+      ? '<span class="vh-normal">' + esc(d.winner === d.challenger ? NAME_C : NAME_O) + ' 获胜！</span>'
       : '<span class="vh-normal">英雄相惜</span>';
     sub.textContent = '🏁 ' + NAME_C + ' ' + cScore + ' : ' + oScore + ' ' + NAME_O;
     scoreLine.innerHTML = '<span class="me">' + cScore + '</span> : <span>' + oScore + '</span>';

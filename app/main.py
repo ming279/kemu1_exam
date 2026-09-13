@@ -16,6 +16,7 @@ import time
 import random
 import hashlib
 import secrets
+import threading
 from contextlib import contextmanager
 from datetime import date, timedelta
 from functools import wraps
@@ -238,14 +239,29 @@ def judge_answer(question, user_labels):
 
 
 # ---------------- auth 模块 ----------------
+NAME_BAD_CHARS = set('<>"\'&\\')
+
+
+def _clean_name(name):
+    """姓名/账号白名单式清洗：去控制字符、拒 HTML 特殊字符，防存储型 XSS。
+    返回清洗后的字符串，非法则返回 None。"""
+    name = ''.join(ch for ch in (name or '') if ch >= ' ' and ch != '\x7f')
+    if any(ch in NAME_BAD_CHARS for ch in name):
+        return None
+    return name.strip()
+
+
 @app.route('/register', methods=['GET', 'POST'])
 def register():
     if request.method == 'POST':
-        username = request.form['username'].strip()
-        real_name = request.form.get('real_name', '').strip()
+        username = _clean_name(request.form['username'])
+        real_name = _clean_name(request.form.get('real_name', ''))
         password = request.form['password']
         if not username or not password or not real_name:
-            flash('账号、姓名和密码不能为空', 'danger')
+            flash('账号、姓名和密码不能为空（姓名不能含 < > " \' & \\ 等字符）',
+                  'danger')
+        elif len(real_name) > 50:
+            flash('姓名过长（最多 50 字）', 'danger')
         elif q("SELECT id FROM `user` WHERE username=%s", (username,), one=True):
             flash('该账号已被注册', 'danger')
         else:
@@ -260,7 +276,7 @@ def register():
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
-        username = request.form['username'].strip()
+        username = _clean_name(request.form.get('username', '')) or ''
         row = q("SELECT id, password_hash FROM `user` WHERE username=%s",
                 (username,), one=True)
         if row and row['password_hash'] == sha256(request.form['password']):
@@ -420,6 +436,26 @@ def exam_start():
     return redirect(url_for('exam_page', pid=pid))
 
 
+EXAM_GRACE_SEC = 60   # 交卷宽限：容忍倒计时归零瞬间的网络延迟，防挂页无限延时作答
+
+
+def _exam_remain_sec(paper):
+    """试卷剩余作答秒数（服务端口径，与 exam_page 倒计时一致）；不限时返回 None"""
+    if paper.get('task_id'):
+        task = q("SELECT mode, time_limit_sec FROM task WHERE id=%s",
+                 (paper['task_id'],), one=True)
+        if not task or task['mode'] != 'exam' or not task['time_limit_sec']:
+            return None
+        tr = q("SELECT TIMESTAMPDIFF(SECOND, start_time, NOW()) AS e "
+               "FROM task_record WHERE paper_id=%s", (paper['id'],), one=True)
+        return task['time_limit_sec'] - (tr['e'] if tr else 0)
+    if paper.get('time_limit_sec'):
+        el = q("SELECT TIMESTAMPDIFF(SECOND, started_at, NOW()) AS e "
+               "FROM exam_paper WHERE id=%s", (paper['id'],), one=True)
+        return paper['time_limit_sec'] - (el['e'] if el else 0)
+    return None
+
+
 @app.route('/exam/<int:pid>')
 @login_required
 def exam_page(pid):
@@ -428,6 +464,18 @@ def exam_page(pid):
     if not paper:
         abort(404)
     if paper['status'] == 'finished':
+        return redirect(url_for('exam_result', pid=pid))
+    # 服务端强制限时：已超时（含宽限）的旧卷再打开也直接按 0 分作废，
+    # 防止用户挂着页面无限延时作答后才交卷
+    _remain_check = _exam_remain_sec(paper)
+    if _remain_check is not None and _remain_check < -EXAM_GRACE_SEC:
+        execute("UPDATE exam_paper SET status='finished', score=0, "
+                "submitted_at=NOW() WHERE id=%s AND status='in_progress'", (pid,))
+        if paper.get('task_id'):
+            execute("UPDATE task_record SET status='expired', "
+                    "submit_time=NOW() WHERE paper_id=%s AND status='in_progress'",
+                    (pid,))
+        flash('本卷已超出考试时限，按 0 分作废', 'error')
         return redirect(url_for('exam_result', pid=pid))
     details = q("SELECT question_id, seq_no, user_answer FROM exam_detail "
                 "WHERE paper_id=%s ORDER BY seq_no", (pid,))
@@ -512,6 +560,17 @@ def exam_submit(pid):
     paper = q("SELECT * FROM exam_paper WHERE id=%s AND user_id=%s",
               (pid, session['uid']), one=True)
     if not paper or paper['status'] == 'finished':
+        return redirect(url_for('exam_result', pid=pid))
+    # 服务端强制限时：超时交卷一律判 0 分，防止挂页无限延时作答（前端倒计时可被篡改）
+    remain = _exam_remain_sec(paper)
+    if remain is not None and remain < -EXAM_GRACE_SEC:
+        execute("UPDATE exam_paper SET status='finished', score=0, "
+                "submitted_at=NOW() WHERE id=%s AND status='in_progress'", (pid,))
+        if paper.get('task_id'):
+            execute("UPDATE task_record SET status='expired', "
+                    "submit_time=NOW() WHERE paper_id=%s AND status='in_progress'",
+                    (pid,))
+        flash('超出考试时限，本卷按 0 分作废', 'error')
         return redirect(url_for('exam_result', pid=pid))
 
     details = q("SELECT id, question_id FROM exam_detail WHERE paper_id=%s "
@@ -1212,6 +1271,10 @@ def stats_clear_papers():
     """删除当前用户全部考试记录（exam_detail 随外键级联删除）"""
     n = q("SELECT COUNT(*) c FROM exam_paper WHERE user_id=%s",
           (session['uid'],), one=True)['c']
+    # task_record.paper_id 外键为 RESTRICT：先置空引用再删卷，否则 500
+    execute("UPDATE task_record SET paper_id=NULL "
+            "WHERE paper_id IN (SELECT id FROM exam_paper WHERE user_id=%s)",
+            (session['uid'],))
     execute("DELETE FROM exam_paper WHERE user_id=%s", (session['uid'],))
     flash(f'已删除 {n} 份试卷（含全部答题明细）', 'success')
     return redirect(url_for('stats'))
@@ -1226,8 +1289,8 @@ def exam_paper_delete(pid):
               (pid,), one=True)
     if not paper:
         return jsonify(ok=False, msg='试卷不存在'), 404
-    is_admin = me.role == 'admin'
-    if not is_admin and paper['user_id'] != me['uid']:
+    is_admin = me['role'] == 'admin'
+    if not is_admin and paper['user_id'] != me['id']:
         return jsonify(ok=False, msg='无权删除此试卷'), 403
     if not is_admin and paper['status'] != 'finished':
         return jsonify(ok=False, msg='只能删除已完成的试卷（进行中请交卷或等限时结束）'), 400
@@ -1715,6 +1778,8 @@ def admin_clear_all():
     n_paper = q("SELECT COUNT(*) c FROM exam_paper", one=True)['c']
     n_prac = q("SELECT COUNT(*) c FROM practice", one=True)['c']
     n_wrong = q("SELECT COUNT(*) c FROM wrong_book", one=True)['c']
+    # task_record.paper_id 外键为 RESTRICT：先置空引用再删卷，否则 500
+    execute("UPDATE task_record SET paper_id=NULL WHERE paper_id IS NOT NULL")
     execute("DELETE FROM exam_paper")     # exam_detail 随外键级联删除
     execute("DELETE FROM practice")
     execute("DELETE FROM wrong_book")
@@ -1740,6 +1805,9 @@ def admin_clear_user(uid):
                (uid,), one=True)['c']
     n_wrong = q("SELECT COUNT(*) c FROM wrong_book WHERE user_id=%s",
                 (uid,), one=True)['c']
+    execute("UPDATE task_record SET paper_id=NULL "
+            "WHERE paper_id IN (SELECT id FROM exam_paper WHERE user_id=%s)",
+            (uid,))
     execute("DELETE FROM exam_paper WHERE user_id=%s", (uid,))
     execute("DELETE FROM practice WHERE user_id=%s", (uid,))
     execute("DELETE FROM wrong_book WHERE user_id=%s", (uid,))
@@ -1834,9 +1902,9 @@ def admin_user_rename(uid):
     u = _target_student(uid)
     if not u:
         return redirect(url_for('admin_users'))
-    real_name = request.form.get('real_name', '').strip()
+    real_name = _clean_name(request.form.get('real_name', ''))
     if not real_name:
-        flash('姓名不能为空', 'danger')
+        flash('姓名不能为空，且不能含 < > " \' & \\ 等字符', 'danger')
     else:
         execute("UPDATE `user` SET real_name=%s WHERE id=%s", (real_name, uid))
         flash(f"用户 {u['username']} 的姓名已更新为 {real_name}", 'success')
@@ -2744,6 +2812,26 @@ def _pk_room_key(pid):
     return f'pk_{pid}'
 
 
+def _pk_new_room(challenger, opponent, qids, status, theme):
+    """统一构造内存房间。lock 串行化开局/结算等 check-then-act 临界区
+    （eventlet/gevent 部署时 threading.Lock 已被补丁为协作锁，安全）。"""
+    return {
+        'challenger': challenger,
+        'opponent': opponent,
+        'status': status,
+        'questions': qids,
+        'current_q': -1,
+        'scores': {challenger: 0, opponent: 0},
+        'answers': {},    # q_idx -> {uid: answer_label}（已答口径：对错都算）
+        'answered': {},   # q_idx -> set of uid who got it right (locked)
+        'ready': set(),
+        'sids': {},
+        'watchers': set(),   # C14 观战者 sid 集合
+        'theme': theme,
+        'lock': threading.Lock(),
+    }
+
+
 def _pk_emit_state(key, room):
     """向全房间推送双方准备状态（客户端以此为准渲染按钮，可自愈重连丢状态）"""
     players = [
@@ -2829,6 +2917,19 @@ def pk_lobby():
         (session['uid'],))
     for inv in invitations:
         inv['created_at'] = str(inv['created_at'])[:19]
+    # 超时未接受的陈旧 waiting 对局：与邀请同窗口（10 分钟），过期自动作废，
+    # 否则「一键回场」横幅永远指向一个开不了局的房间，内存房间也永久残留
+    stale_ids = [r['id'] for r in q(
+        "SELECT id FROM pk_challenge WHERE status='waiting' "
+        "AND created_at < NOW() - INTERVAL 10 MINUTE "
+        "AND (challenger_uid=%s OR opponent_uid=%s)",
+        (session['uid'], session['uid']))]
+    if stale_ids:
+        execute("UPDATE pk_challenge SET status='declined' "
+                "WHERE id IN (%s) AND status='waiting'"
+                % ','.join(['%s'] * len(stale_ids)), stale_ids)
+        for sid_ in stale_ids:
+            PK_ROOMS.pop(_pk_room_key(sid_), None)
     # 我有一场未结束的对局（waiting/playing）：退出重登后一键回到战场，
     # 免去再输房间码；进房后由 pk_rejoin 自动恢复对局状态
     ongoing = q(
@@ -2888,21 +2989,7 @@ def pk_challenge():
 
     # 初始化内存房间
     key = _pk_room_key(pid)
-    PK_ROOMS[key] = {
-        'challenger': session['uid'],
-        'opponent': opponent_id,
-        'status': 'waiting',
-        'questions': qids,
-        'current_q': -1,
-        'scores': {session['uid']: 0, opponent_id: 0},
-        'answers': {},   # q_idx -> {uid: answer_label}
-        'answered': {},  # q_idx -> set of uid who got it right (locked)
-        'seq': {},       # C15 回放：q_idx -> {uid: answer_label}（含答错与未答）
-        'ready': set(),
-        'sids': {},
-        'watchers': set(),   # C14 观战者 sid 集合
-        'theme': theme,
-    }
+    PK_ROOMS[key] = _pk_new_room(session['uid'], opponent_id, qids, 'waiting', theme)
     # C22 站内通知：告知被挑战方
     me_row = q("SELECT username FROM `user` WHERE id=%s", (session['uid'],), one=True)
     _notify(opponent_id, f'{me_row["username"]} 向你发起 PK 挑战，快去应战！',
@@ -3135,20 +3222,19 @@ def pk_join(data):
                 emit('room_closed', {'msg': '服务器重启导致对局中断，已按平局处理'})
             return
         if rec['status'] != 'waiting':
+            # 已结束/作废的对局：参赛玩家进入时给出明确提示，而不是卡在等待页
+            if _session_uid() in (rec['challenger_uid'], rec['opponent_uid']):
+                emit('room_closed', {'msg': '该对局已结束，可返回大厅查看战绩或发起再战'})
             return
-        room = PK_ROOMS[key] = {
-            'challenger': rec['challenger_uid'],
-            'opponent': rec['opponent_uid'],
-            'status': 'waiting',
-            'questions': [int(x) for x in rec['question_ids'].split(',')],
-            'current_q': -1,
-            'scores': {rec['challenger_uid']: 0, rec['opponent_uid']: 0},
-            'answers': {}, 'answered': {}, 'seq': {},
-            'ready': set(), 'sids': {}, 'watchers': set(),
-            'theme': rec.get('theme') or 'day',
-        }
+        room = PK_ROOMS[key] = _pk_new_room(
+            rec['challenger_uid'], rec['opponent_uid'],
+            [int(x) for x in rec['question_ids'].split(',')],
+            'waiting', rec.get('theme') or 'day')
     uid = _session_uid()
     if uid not in (room['challenger'], room['opponent']):
+        return
+    if room['status'] == 'finished':
+        emit('room_closed', {'msg': '该对局已结束，可返回大厅查看战绩或发起再战'})
         return
     join_room(key)
     room['sids'][uid] = request.sid
@@ -3164,21 +3250,24 @@ def pk_join(data):
     # 恢复当前题/比分/剩余秒。数据口径与观战 watch_sync 一致但不泄露对方选择
     if room['status'] == 'playing' and room.get('current_q', -1) >= 0:
         idx = room['current_q']
-        qq = load_questions([room['questions'][idx]])[0]
+        qrows = load_questions([room['questions'][idx]])
         remain = max(0, round(room.get('q_deadline', time.time()) - time.time()))
         ans = room.get('answers', {}).get(idx, {}) or {}
-        answered = room.get('answered', {}).get(idx, set())
         opp = room['opponent'] if uid == room['challenger'] else room['challenger']
-        emit('pk_rejoin', {
-            'idx': idx, 'total': PK_QUESTION_COUNT,
-            'stem': qq['stem'], 'images': qq.get('images', []),
-            'options': [{'label': o['label'], 'content': o['content']}
-                        for o in qq['options']],
-            'q_time': PK_Q_TIME, 'remain': remain,
-            'scores': {str(k): v for k, v in room['scores'].items()},
-            'my_answered': uid in answered, 'my_choice': ans.get(uid),
-            'opp_answered': opp in answered,
-        })
+        # 已作答口径 = answers 里有我的记录（对错都算），不能用只含答对者的 answered 集合
+        if qrows:
+            qq = qrows[0]
+            emit('pk_rejoin', {
+                'idx': idx, 'total': PK_QUESTION_COUNT,
+                'stem': qq['stem'], 'images': qq.get('images', []),
+                'options': [{'label': o['label'], 'content': o['content']}
+                            for o in qq['options']],
+                'q_time': PK_Q_TIME, 'remain': remain,
+                'scores': {str(k): v for k, v in room['scores'].items()},
+                'my_answered': uid in ans, 'my_choice': ans.get(uid),
+                'opp_answered': opp in ans,
+                'locked': room.get('locked_q') == idx,
+            })
 
 
 @socketio.on('watch_join')
@@ -3193,17 +3282,15 @@ def watch_join(data):
         rec = q("SELECT * FROM pk_challenge WHERE id=%s", (pid,), one=True)
         if not rec or rec['status'] not in ('waiting', 'ready', 'playing', 'finished'):
             return
-        room = PK_ROOMS[key] = {
-            'challenger': rec['challenger_uid'],
-            'opponent': rec['opponent_uid'],
-            'status': rec['status'],
-            'questions': [int(x) for x in rec['question_ids'].split(',')],
-            'current_q': -1,
-            'scores': {rec['challenger_uid']: 0, rec['opponent_uid']: 0},
-            'answers': {}, 'answered': {}, 'seq': {},
-            'ready': set(), 'sids': {}, 'watchers': set(),
-            'theme': rec.get('theme') or 'day',
-        }
+        if rec['status'] == 'finished':
+            # 已结束的对局不再重建内存房间（防 PK_ROOMS 泄漏），直接引导看回放
+            join_room(key)
+            emit('watch_finished', {'pid': pid})
+            return
+        room = PK_ROOMS[key] = _pk_new_room(
+            rec['challenger_uid'], rec['opponent_uid'],
+            [int(x) for x in rec['question_ids'].split(',')],
+            rec['status'], rec.get('theme') or 'day')
     join_room(key)
     room.setdefault('watchers', set()).add(request.sid)
     emit('watch_count', {'n': len(room['watchers'])}, room=key)
@@ -3216,7 +3303,10 @@ def watch_join(data):
     # 对局进行中：补发当前题/比分/剩余时间/双方已选答案，观战者即时同步
     if room['status'] == 'playing' and room.get('current_q', -1) >= 0:
         idx = room['current_q']
-        qq = load_questions([room['questions'][idx]])[0]
+        rows = load_questions([room['questions'][idx]])
+        if not rows:
+            return
+        qq = rows[0]
         remain = max(0, round(room.get('q_deadline', time.time()) - time.time()))
         ans = room.get('answers', {}).get(idx, {}) or {}
         emit('watch_sync', {
@@ -3234,14 +3324,16 @@ def watch_join(data):
 
 
 def _pk_try_start(key, room):
-    """检查双方都已准备且都在线，满足则开局。供 pk_ready / pk_join 调用。"""
-    if room['status'] != 'waiting':
-        return
-    both_ready = room['challenger'] in room['ready'] and room['opponent'] in room['ready']
-    both_online = room['challenger'] in room['sids'] and room['opponent'] in room['sids']
-    if not (both_ready and both_online):
-        return
-    room['status'] = 'playing'
+    """检查双方都已准备且都在线，满足则开局。供 pk_ready / pk_join 调用。
+    锁内只翻转状态（不跨 socketio.sleep 持锁），防止双开局/跳题。"""
+    with room['lock']:
+        if room['status'] != 'waiting':
+            return
+        both_ready = room['challenger'] in room['ready'] and room['opponent'] in room['ready']
+        both_online = room['challenger'] in room['sids'] and room['opponent'] in room['sids']
+        if not (both_ready and both_online):
+            return
+        room['status'] = 'playing'
     room['current_q'] = -1
     socketio.sleep(1)
     emit('start_countdown', {}, room=key)
@@ -3280,7 +3372,15 @@ def _pk_next_question(key, room):
         _pk_finish(key, room)
         return
     qids = room['questions']
-    qq = load_questions([qids[idx]])[0]
+    rows = load_questions([qids[idx]])
+    if not rows:
+        # 题目在对局中被管理员软删：本题作废直接推进，否则整场对局永久卡死
+        room['locked_q'] = idx
+        emit('question_timeout', {'idx': idx, 'correct': ''}, room=key)
+        socketio.sleep(2)
+        _pk_next_question(key, room)
+        return
+    qq = rows[0]
     payload = {
         'idx': idx,
         'total': PK_QUESTION_COUNT,
@@ -3306,7 +3406,8 @@ def _pk_next_question(key, room):
             break
     if room['status'] != 'playing' or room['current_q'] != idx:
         return
-    # 公布正确答案
+    # 公布正确答案：同时锁定该题，防止揭晓后 2 秒窗口内仍有人补交刚公布的答案得分
+    room['locked_q'] = idx
     correct = ''.join(o['label'] for o in qq['options'] if o['is_correct'])
     emit('question_timeout', {'idx': idx, 'correct': correct}, room=key)
     socketio.sleep(2)
@@ -3328,14 +3429,23 @@ def pk_answer(data):
         return
     if idx != room['current_q']:
         return
+    # 题目已锁定/已公布答案（含超时揭晓后的 2 秒窗口）→ 不再计分
+    if room.get('locked_q') == idx:
+        return
 
-    # 该题已被此人答对锁定 -> 不能重复答
-    if uid in room['answered'].get(idx, set()):
+    # 该题已被此人作答（对错都算）-> 不能重复答
+    if uid in room['answers'].get(idx, {}):
         return
 
     # 服务端判分
     qids = room['questions']
-    qq = load_questions([qids[idx]])[0]
+    qrows = load_questions([qids[idx]])
+    if not qrows:
+        return
+    qq = qrows[0]
+    all_labels = {o['label'] for o in qq['options']}
+    if not isinstance(answer, str) or answer not in all_labels:
+        return   # 只接受合法选项：防非字符串毒化作答序列（回放/结算拼接）
     correct_labels = sorted(o['label'] for o in qq['options'] if o['is_correct'])
     ok = sorted([answer]) == correct_labels
 
@@ -3427,15 +3537,20 @@ def pk_chat(data):
 
 
 def _pk_seq_str(room, uid):
-    """C15 回放：按题目顺序拼合作答串，未作答记 '_'"""
-    seq = room.get('seq', {})
-    return ''.join(seq.get(i, {}).get(uid, '_')
+    """C15 回放：按题目顺序拼合作答串，未作答记 '_'。
+    以 answers（对错都记录）为数据源；此前误读从未写入的 seq，回放序列恒空。"""
+    answers = room.get('answers', {})
+    return ''.join(str(answers.get(i, {}).get(uid, '_'))
                    for i in range(PK_QUESTION_COUNT))[:20]
 
 
 def _pk_finish(key, room, force_winner=None):
-    """游戏结束：判定胜负，更新战绩（force_winner 用于认输/中途退出判负）"""
-    room['status'] = 'finished'
+    """游戏结束：判定胜负，更新战绩（force_winner 用于认输/中途退出判负）。
+    锁内幂等守卫：并发 concede/leave/自然结束只会真正结算一次。"""
+    with room['lock']:
+        if room['status'] != 'playing':
+            return
+        room['status'] = 'finished'
     cs = room['scores'][room['challenger']]
     os_ = room['scores'][room['opponent']]
     if force_winner is not None:
@@ -3447,22 +3562,24 @@ def _pk_finish(key, room, force_winner=None):
     else:
         winner = None  # 平局
 
-    # 更新数据库（含双方作答序列，供对局回放）
-    execute("UPDATE pk_challenge SET status='finished', "
-            "challenger_score=%s, opponent_score=%s, winner_uid=%s, "
-            "challenger_answers=%s, opponent_answers=%s, "
-            "finished_at=CURRENT_TIMESTAMP WHERE id=%s",
-            (cs, os_, winner, _pk_seq_str(room, room['challenger']),
-             _pk_seq_str(room, room['opponent']), int(key.split('_')[1])))
-
-    if winner:
-        # 胜方：胜场+1，连胜+1
-        execute("UPDATE `user` SET pk_wins=pk_wins+1, win_streak=win_streak+1 "
-                "WHERE id=%s", (winner,))
-        # 负方：负场+1，连胜清零
-        loser = room['opponent'] if winner == room['challenger'] else room['challenger']
-        execute("UPDATE `user` SET pk_losses=pk_losses+1, win_streak=0 "
-                "WHERE id=%s", (loser,))
+    # 更新数据库（含双方作答序列，供对局回放）：事务包裹，避免中途失败战绩不一致
+    pid = int(key.split('_')[1])
+    with _tx() as db:
+        with db.cursor() as cur:
+            cur.execute("UPDATE pk_challenge SET status='finished', "
+                        "challenger_score=%s, opponent_score=%s, winner_uid=%s, "
+                        "challenger_answers=%s, opponent_answers=%s, "
+                        "finished_at=CURRENT_TIMESTAMP WHERE id=%s",
+                        (cs, os_, winner, _pk_seq_str(room, room['challenger']),
+                         _pk_seq_str(room, room['opponent']), pid))
+            if winner:
+                # 胜方：胜场+1，连胜+1；负方：负场+1，连胜清零
+                cur.execute("UPDATE `user` SET pk_wins=pk_wins+1, "
+                            "win_streak=win_streak+1 WHERE id=%s", (winner,))
+                loser = (room['opponent'] if winner == room['challenger']
+                         else room['challenger'])
+                cur.execute("UPDATE `user` SET pk_losses=pk_losses+1, "
+                            "win_streak=0 WHERE id=%s", (loser,))
 
     emit('game_over', {
         'scores': {str(k): v for k, v in room['scores'].items()},
@@ -3523,24 +3640,20 @@ def pk_rematch(data):
                 (pid,), one=True)
         if not rec:
             return
-        room = PK_ROOMS[key] = {
-            'challenger': rec['challenger_uid'],
-            'opponent': rec['opponent_uid'],
-            'status': 'finished',
-            'questions': [int(x) for x in rec['question_ids'].split(',')],
-            'current_q': -1,
-            'scores': {rec['challenger_uid']: 0, rec['opponent_uid']: 0},
-            'answers': {}, 'answered': {}, 'seq': {},
-            'ready': set(), 'sids': {}, 'watchers': set(),
-            'theme': rec.get('theme') or 'day',
-        }
+        # setdefault 防双方并发首点各自重建、后到者覆盖前者 rematch 集合
+        room = PK_ROOMS.setdefault(key, _pk_new_room(
+            rec['challenger_uid'], rec['opponent_uid'],
+            [int(x) for x in rec['question_ids'].split(',')],
+            'finished', rec.get('theme') or 'day'))
     uid = _session_uid()
     if uid not in (room['challenger'], room['opponent']):
         return
-    rematch = room.setdefault('rematch', set())
-    rematch.add(uid)
-    emit('rematch_wait', {'n': len(rematch)}, room=key)
-    if len(rematch) < 2:
+    with room['lock']:
+        rematch = room.setdefault('rematch', set())
+        rematch.add(uid)
+        n_rematch = len(rematch)
+    emit('rematch_wait', {'n': n_rematch}, room=key)
+    if n_rematch < 2:
         return
     # 双方都同意：按相同题型配置重新抽新题（避开近 3 局 + 上一局原题），开新局
     old = list(room['questions'])
@@ -3560,17 +3673,9 @@ def pk_rematch(data):
         "theme, status) VALUES (%s, %s, %s, %s, 'waiting')",
         (room['challenger'], room['opponent'],
          ','.join(map(str, new_qids)), room.get('theme') or 'day'))
-    PK_ROOMS[_pk_room_key(new_pid)] = {
-        'challenger': room['challenger'],
-        'opponent': room['opponent'],
-        'status': 'waiting',
-        'questions': new_qids,
-        'current_q': -1,
-        'scores': {room['challenger']: 0, room['opponent']: 0},
-        'answers': {}, 'answered': {}, 'seq': {},
-        'ready': set(), 'sids': {}, 'watchers': set(),
-        'theme': room.get('theme') or 'day',
-    }
+    PK_ROOMS[_pk_room_key(new_pid)] = _pk_new_room(
+        room['challenger'], room['opponent'], new_qids,
+        'waiting', room.get('theme') or 'day')
     emit('rematch_go', {'pid': new_pid}, room=key)
     PK_ROOMS.pop(key, None)
 

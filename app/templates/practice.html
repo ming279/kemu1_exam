@@ -92,13 +92,14 @@ function aiExplain(qid, btn) {
 /* C20 纠错上报 */
 function reportQuestion(qid) {
   var reason = prompt('请描述这道题的问题（如答案有误/题干歧义/配图错误）：');
-  if (reason === null) return;
+  if (reason === null || !reason.trim()) return;
   fetch('/report/question/' + qid, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ reason: reason })
+    body: JSON.stringify({ reason: reason.trim() })
   }).then(function (r) { return r.json(); })
-    .then(function (d) { alert(d.msg); });
+    .then(function (d) { alert(d.msg); })
+    .catch(function () { alert('上报失败，请稍后重试'); });
 }
 
 /* C8 语音读题（Web Speech API） */
@@ -107,13 +108,13 @@ function speakQuestion() {
   speechSynthesis.cancel();
   var u = new SpeechSynthesisUtterance(document.querySelector('.q-card b').textContent);
   u.lang = 'zh-CN'; u.rate = 0.95;
+  speechSynthesis.speak(u);   // 先读题干
   {% if not reveal %}
   document.querySelectorAll('#practice-form .opt label').forEach(function (l) {
     var t = l.textContent.trim();
     if (t) { var u2 = new SpeechSynthesisUtterance(t); u2.lang = 'zh-CN'; speechSynthesis.speak(u2); }
   });
   {% endif %}
-  speechSynthesis.speak(u);
 }
 
 /* C6 键盘快捷键：A-D / 1-4 选选项，Enter 提交/下一题 */
@@ -127,7 +128,8 @@ document.addEventListener('keydown', function (e) {
     if (inputs[KEYMAP[k]].type === 'radio') inputs[KEYMAP[k]].checked = true;
     else inputs[KEYMAP[k]].checked = !inputs[KEYMAP[k]].checked;
   } else if (e.key === 'Enter') {
-    document.getElementById('practice-form').submit();
+    var pf = document.getElementById('practice-form');
+    if (pf.requestSubmit) pf.requestSubmit(); else pf.submit();   // requestSubmit 保留 HTML5 必填校验
   }
   {% else %}
   if (e.key === 'Enter') location.href = NEXT_URL;

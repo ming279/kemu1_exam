@@ -83,6 +83,7 @@
           <input type="hidden" name="opponent" value="{{ s.id }}">
           <input type="hidden" name="judge_count" class="f-judge">
           <input type="hidden" name="single_count" class="f-single">
+          <input type="hidden" name="theme" class="f-theme">
           <button type="submit" class="btn small"
                   onclick="return challengeConfirm(this, '{{ s.username }}')">发起挑战</button>
         </form>
@@ -140,6 +141,12 @@
 var socket = io();
 socket.on('pk_invited', function (d) { refreshInvites(); });
 
+function escapeHtml(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+  });
+}
+
 function refreshInvites() {
   fetch('{{ url_for("pk_invitations") }}')
     .then(function (r) { return r.json(); })
@@ -155,8 +162,8 @@ function refreshInvites() {
       list.innerHTML = d.invitations.map(function (v) {
         return '<div style="display:flex;align-items:center;gap:12px;padding:8px 0;'
              + 'border-bottom:1px dashed #fca5a5;">'
-             + '<span><b>' + v.c_name + '</b>（' + (v.c_real || '同学') + '）邀请你进行 PK 对战！</span>'
-             + '<span class="muted">' + v.created_at + '</span>'
+             + '<span><b>' + escapeHtml(v.c_name) + '</b>（' + escapeHtml(v.c_real || '同学') + '）邀请你进行 PK 对战！</span>'
+             + '<span class="muted">' + escapeHtml(v.created_at) + '</span>'
              + '<span style="flex:1"></span>'
              + '<form method="post" action="/pk/' + v.id + '/decline" class="inline">'
              + '<button type="submit" class="btn small" style="background:#9ca3af;">拒绝</button></form>'

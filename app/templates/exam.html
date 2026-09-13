@@ -90,15 +90,26 @@
   function refreshCount() {
     var n = document.querySelectorAll('.ac-cell.answered').length;
     document.getElementById('ac-count').textContent = n;
-    if (n === total) {
-      document.querySelector('.answer-card .btn').classList.add('btn-ready');
-    }
+    var submitBtn = document.querySelector('.answer-card button[type=submit]');
+    if (submitBtn) submitBtn.classList.toggle('btn-ready', n === total);
   }
   function markAnswered(input, on) {
     var wrap = input.closest('[data-qseq]');
     if (!wrap) return;
     var cell = cells[wrap.dataset.qseq];
     if (cell) cell.classList.toggle('answered', on);
+  }
+
+  // ---- 作答自动保存：500ms 防抖，POST 整个表单到 /exam/<pid>/save（后端只写 user_answer）----
+  var saveTimer = null;
+  function saveAnswers() {
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(function () {
+      fetch('{{ url_for("exam_save", pid=pid) }}', {
+        method: 'POST',
+        body: new FormData(document.getElementById('examForm'))
+      }).catch(function () {});
+    }, 500);
   }
 
   document.addEventListener('change', function (e) {
@@ -126,7 +137,9 @@
         cdEl.textContent = '00:00:00';
         cdEl.style.color = '#dc2626';
         alert('时间到，自动交卷！');
-        document.getElementById('examForm').submit();
+        // requestSubmit 走正常提交流程：触发 submit 监听（清 localStorage）并允许按钮提交
+        var f = document.getElementById('examForm');
+        if (f.requestSubmit) f.requestSubmit(); else f.submit();
         return;
       }
       var h = Math.floor(remain / 3600);
@@ -258,13 +271,29 @@
                  { type: 'application/json' }));
     }
   });
-  // 交卷后清掉本卷本地计数
+  // 交卷后清掉本卷本地计数与题目标记
   document.getElementById('examForm').addEventListener('submit', function () {
-    try { localStorage.removeItem(LS_KEY); } catch (e) {}
+    try { localStorage.removeItem(LS_KEY); localStorage.removeItem(MARK_KEY); } catch (e) {}
   });
 
-  // ---- C5 题目标记（会做但存疑）：答题卡橙色 + 一键跳转复查 ----
+  // ---- C5 题目标记（会做但存疑）：答题卡橙色 + 一键跳转复查（localStorage 持久化，刷新不丢）----
+  var MARK_KEY = 'mark_' + PID;
   var marks = {};
+  try { marks = JSON.parse(localStorage.getItem(MARK_KEY) || '{}') || {}; } catch (e) { marks = {}; }
+  function persistMarks() {
+    try {
+      if (Object.keys(marks).some(function (k) { return marks[k]; })) {
+        localStorage.setItem(MARK_KEY, JSON.stringify(marks));
+      } else {
+        localStorage.removeItem(MARK_KEY);
+      }
+    } catch (e) {}
+  }
+  function refreshMarkCount() {
+    var n = Object.keys(marks).filter(function (k) { return marks[k]; }).length;
+    document.getElementById('mark-n').textContent = n;
+    return n;
+  }
   document.querySelectorAll('.q-block').forEach(function (blk) {
     var seq = blk.dataset.qseq;
     var btn = document.createElement('button');
@@ -272,15 +301,20 @@
     btn.className = 'q-mark-btn';
     btn.title = '标记此题（会做但存疑）';
     btn.textContent = '🔖';
+    if (marks[seq]) {
+      btn.classList.add('on');
+      if (cells[seq]) cells[seq].classList.add('marked');
+    }
     btn.addEventListener('click', function () {
       marks[seq] = !marks[seq];
       btn.classList.toggle('on', marks[seq]);
       if (cells[seq]) cells[seq].classList.toggle('marked', marks[seq]);
-      var n = Object.keys(marks).filter(function (k) { return marks[k]; }).length;
-      document.getElementById('mark-n').textContent = n;
+      persistMarks();
+      refreshMarkCount();
     });
     blk.insertBefore(btn, blk.firstChild);
   });
+  refreshMarkCount();
   document.getElementById('btn-review-mark').addEventListener('click', function () {
     var marked = Object.keys(marks).filter(function (k) { return marks[k]; })
                                 .sort(function (a, b) { return a - b; });
