@@ -515,7 +515,12 @@ a.entry-row:hover{ text-decoration:none; }
 .fav-btn:hover{ transform:scale(1.18); }
 
 /* 题目标记 / 切屏提示 */
-.q-mark-btn{ position:absolute; right:0; top:-4px; font-size:18px; background:none; border:none; cursor:pointer; opacity:.35; }
+.q-mark-btn{
+  position:absolute; right:14px; top:12px; z-index:5;
+  font-size:18px; background:none; border:none; cursor:pointer;
+  opacity:.4; transition:opacity .15s, transform .12s; line-height:1; padding:2px;
+}
+.q-mark-btn:hover{ opacity:.85; transform:scale(1.1); }
 .q-mark-btn.on{ opacity:1; }
 .q-block{ position:relative; scroll-margin-top:80px; }
 .switch-warn{
