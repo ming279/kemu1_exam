@@ -16,6 +16,7 @@ if (localStorage.getItem('darkmode') === '1') {
 </head>
 {% set ep = request.endpoint or '' %}
 <body class="{{ 'anon' if not cur_user else '' }}">
+<div class="mesh-bg" aria-hidden="true"><i></i><i></i><i></i><i class="grain"></i></div>
 {% if cur_user %}
 <div class="sb-overlay" id="sb-overlay"></div>
 <aside class="sidebar">
@@ -363,5 +364,7 @@ if (localStorage.getItem('darkmode') === '1') {
   });
 })();
 </script>
+
+<script src="{{ url_for('static', filename='ui.js') }}"></script>
 </body>
 </html>

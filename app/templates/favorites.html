@@ -15,9 +15,11 @@
 {% endif %}
 
 {% if not questions %}
-<div class="card">
-  收藏夹还是空的。在练习页、错题本或成绩单里点题目旁的 <b style="color:#f59e0b;">☆</b>，
-  就能把题收藏到这里，方便考前集中复习。
+<div class="card empty">
+  <span class="e-ico">⭐</span>
+  <div class="e-t">收藏夹还是空的</div>
+  <div class="e-d">在练习页、错题本或成绩单里点题目旁的 ☆，就能把题收藏到这里，方便考前集中复习。</div>
+  <a class="btn" href="{{ url_for('practice_home') }}">去练习</a>
 </div>
 {% endif %}
 

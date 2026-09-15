@@ -163,8 +163,8 @@
         type:'radar',
         data:[{ value: radarValues, name:'练习正确率%',
                 areaStyle:{color:'rgba(37,99,235,0.25)'},
-                lineStyle:{color:'#2563eb', width:2},
-                itemStyle:{color:'#2563eb'} }]
+                lineStyle:{color:'#5b5bf6', width:2},
+                itemStyle:{color:'#5b5bf6'} }]
       }]
     });
   }
@@ -300,7 +300,7 @@
       xAxis:{type:'category', data:finishedPapers.map(function(d){return d.name;})},
       yAxis:{type:'value', min:0, max:100},
       series:[{type:'line', smooth:true, data:finishedPapers.map(function(d){return d.score;}),
-        itemStyle:{color:'#2563eb'}, lineStyle:{width:3}, symbolSize:8,
+        itemStyle:{color:'#5b5bf6'}, lineStyle:{width:3}, symbolSize:8,
         areaStyle:{color:'rgba(37,99,235,0.12)'},
         markLine:{silent:true, data:[{yAxis:90, label:{formatter:'优秀线90'}, lineStyle:{color:'#16a34a', type:'dashed'}}]}
       }]

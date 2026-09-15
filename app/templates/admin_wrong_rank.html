@@ -75,7 +75,7 @@
   var qtype = {{ charts.qtype|safe }};
   var answers = {{ charts.answers|safe }};
   var rates = {{ charts.rates|safe }};
-  var palette = ['#2563eb','#dc2626','#f59e0b','#16a34a','#8b5cf6','#ec4899','#0891b2','#64748b'];
+  var palette = ['#5b5bf6','#8b5cf6','#ec4899','#22c1d6','#f59e0b','#10b981','#0ea5e9','#64748b'];
 
   // 1. TOP10 错误率横向条形图
   var c1 = echarts.init(document.getElementById('chart-top10'));
@@ -87,7 +87,7 @@
             axisLabel:{width:120, overflow:'truncate', fontSize:11}},
     series: [{
       type:'bar', data: top10.map(function(d){return d.rate;}).reverse(),
-      itemStyle:{color: function(p){return p.value>=70?'#dc2626':(p.value>=40?'#f59e0b':'#2563eb');},
+      itemStyle:{color: function(p){return p.value>=70?'#dc2626':(p.value>=40?'#f59e0b':'#5b5bf6');},
                  borderRadius:[0,4,4,0]},
       label:{show:true, position:'right', formatter:'{c}%', fontSize:11}
     }]

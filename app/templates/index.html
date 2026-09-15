@@ -1,26 +1,59 @@
 {% extends 'base.html' %}
 {% block content %}
+{% set goal = 30 %}
+{% set done_today = [stats.today_done or 0, goal]|min %}
 <div class="home-head">
   <h2 style="margin:0;">欢迎，{{ cur_user.real_name or cur_user.username }}</h2>
-  <p class="muted" style="margin:3px 0 0;">准备好今天的刷题了吗？</p>
+  <p class="muted" style="margin:3px 0 0;">
+    {% if stats.my_wrong %}
+      先攻克 {{ stats.my_wrong }} 道错题，再来做一套模拟考。
+    {% else %}
+      错题已清零，直接开一套模拟考检验一下。
+    {% endif %}
+  </p>
 </div>
 
-<div class="stat-grid" style="margin-bottom:22px;">
-  <div class="stat-card">
-    <div><div class="stat-label">题库总题数</div><div class="stat-value num">{{ stats.total }}</div></div>
-    <div class="stat-ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></div>
+<div class="card today-card" style="margin-bottom:16px;">
+  <div class="today-ring">
+    <svg width="78" height="78" viewBox="0 0 78 78" aria-hidden="true">
+      <defs>
+        <linearGradient id="todayGrad" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stop-color="#5b5bf6"/><stop offset="1" stop-color="#ec4899"/>
+        </linearGradient>
+      </defs>
+      <circle cx="39" cy="39" r="33" fill="none" stroke="var(--hover)" stroke-width="8"/>
+      <circle cx="39" cy="39" r="33" fill="none" stroke="url(#todayGrad)" stroke-width="8" stroke-linecap="round"
+              stroke-dasharray="{{ (done_today / goal * 207.3)|round(1) }} 207.3"/>
+    </svg>
+    <span class="val">{{ stats.today_done or 0 }}<small style="font-size:12px;color:var(--muted)">/{{ goal }}</small></span>
   </div>
-  <div class="stat-card">
-    <div><div class="stat-label">注册用户</div><div class="stat-value num">{{ stats.users }}</div></div>
-    <div class="stat-ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div>
+
+  <div style="flex:1;min-width:220px;">
+    <b style="font-size:15px;">今日目标：{{ goal }} 题</b>
+    <p class="muted" style="margin:2px 0 0;">
+      {% if (stats.today_done or 0) >= goal %}
+        今日已达标，可以收工了 🎉
+      {% else %}
+        已完成 {{ stats.today_done or 0 }} 题 · 还差 {{ goal - (stats.today_done or 0) }} 题
+      {% endif %}
+    </p>
+    <div style="display:flex;gap:10px;margin-top:12px;flex-wrap:wrap;">
+      <a class="btn" href="{{ url_for('practice_home') }}">
+        {{ '继续今日练习' if (stats.today_done or 0) > 0 else '开始今日练习' }}
+      </a>
+      {% if stats.due_wrong %}
+      <a class="btn secondary" href="{{ url_for('wrongbook') }}">复习 {{ stats.due_wrong }} 道到期错题</a>
+      {% elif stats.my_wrong %}
+      <a class="btn secondary" href="{{ url_for('wrongbook') }}">攻克 {{ stats.my_wrong }} 道错题</a>
+      {% endif %}
+      <a class="btn secondary" href="{{ url_for('pk_lobby') }}">⚔️ PK 对战</a>
+    </div>
   </div>
-  <div class="stat-card">
-    <div><div class="stat-label">已完成考试</div><div class="stat-value num">{{ stats.papers }}</div></div>
-    <div class="stat-ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M9 11l3 3L22 4"/></svg></div>
-  </div>
-  <div class="stat-card">
-    <div><div class="stat-label">我的未掌握错题</div><div class="stat-value num danger">{{ stats.my_wrong }}</div></div>
-    <div class="stat-ic amber"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg></div>
+
+  <div style="text-align:right;">
+    <div class="stat-label">最近模考</div>
+    <div class="stat-value num">{{ stats.last_score if stats.last_score is not none else '—' }}</div>
+    <span class="muted small">题库 {{ stats.total }} · 用户 {{ stats.users }}</span>
   </div>
 </div>
 

@@ -88,9 +88,20 @@
 
 <div class="pagination">
   {% set del_q = {'del': '1'} if del_f == '1' else {} %}
+  {% if page > 1 %}<a href="{{ url_for('admin_questions', page=1, q=search or none, qtype=qtype_f or none, cat=cat_f or none, **del_q) }}">« 首页</a>{% endif %}
   {% if page > 1 %}<a href="{{ url_for('admin_questions', page=page-1, q=search or none, qtype=qtype_f or none, cat=cat_f or none, **del_q) }}">上一页</a>{% endif %}
   <span>第 {{ page }} / {{ pages }} 页（共 {{ total }} 题）</span>
   {% if page < pages %}<a href="{{ url_for('admin_questions', page=page+1, q=search or none, qtype=qtype_f or none, cat=cat_f or none, **del_q) }}">下一页</a>{% endif %}
+  {% if page < pages %}<a href="{{ url_for('admin_questions', page=pages, q=search or none, qtype=qtype_f or none, cat=cat_f or none, **del_q) }}">末页 »</a>{% endif %}
+  {# 3105 题 = 156 页，直接输入页码跳转 #}
+  <form method="get" class="inline" style="margin-left:6px;">
+    <input type="hidden" name="q" value="{{ search or '' }}">
+    <input type="hidden" name="qtype" value="{{ qtype_f or '' }}">
+    <input type="hidden" name="cat" value="{{ cat_f or '' }}">
+    {% if del_f == '1' %}<input type="hidden" name="del" value="1">{% endif %}
+    <input class="jump" type="number" name="page" min="1" max="{{ pages }}" value="{{ page }}"
+           onchange="this.form.submit()" title="输入页码后回车跳转">
+  </form>
 </div>
 
 <script>

@@ -158,6 +158,84 @@ def _study_streak(uid):
     return streak
 
 
+# ---------------------------------------------------------------------------
+# 错题间隔重复（SRS）：依赖 migration_v6 的 wrong_book.next_review
+# 未执行迁移时自动降级为旧逻辑，不会报错
+# ---------------------------------------------------------------------------
+_SRS_ENABLED = None
+
+
+def _srs_enabled():
+    """wrong_book 是否已有 next_review 列（结果缓存）"""
+    global _SRS_ENABLED
+    if _SRS_ENABLED is None:
+        try:
+            r = q("SELECT COUNT(*) c FROM information_schema.COLUMNS "
+                  "WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='wrong_book' "
+                  "AND COLUMN_NAME='next_review'", one=True)
+            _SRS_ENABLED = bool(r and r['c'] > 0)
+        except Exception:
+            _SRS_ENABLED = False
+    return _SRS_ENABLED
+
+
+def _due_cond(prefix='wb.'):
+    """到期条件：next_review 为空或已到期"""
+    if not _srs_enabled():
+        return ''
+    return " AND (%snext_review IS NULL OR %snext_review <= CURDATE())" % (prefix, prefix)
+
+
+def _due_wrong(uid):
+    """今日待复习错题数"""
+    try:
+        return q("SELECT COUNT(*) c FROM wrong_book WHERE user_id=%s AND mastered=0"
+                 + _due_cond(''), (uid,), one=True)['c']
+    except Exception:
+        return 0
+
+
+def _wb_mark_wrong(uid, qid):
+    """答错：累计错次、重置连对、当天即可再练（next_review = 今天）"""
+    try:
+        execute(
+            "INSERT INTO wrong_book (user_id, question_id, next_review) "
+            "VALUES (%s, %s, CURDATE()) "
+            "ON DUPLICATE KEY UPDATE wrong_count = wrong_count + 1, "
+            "last_wrong_at = CURRENT_TIMESTAMP, mastered = 0, correct_streak = 0, "
+            "next_review = CURDATE()",
+            (uid, qid))
+    except Exception:
+        # 未执行 migration_v6 时降级
+        execute(
+            "INSERT INTO wrong_book (user_id, question_id) VALUES (%s, %s) "
+            "ON DUPLICATE KEY UPDATE wrong_count = wrong_count + 1, "
+            "last_wrong_at = CURRENT_TIMESTAMP, mastered = 0, correct_streak = 0",
+            (uid, qid))
+
+
+def _wb_mark_right(uid, qid):
+    """答对：连对 2 次即掌握移出；连对 1 次则 3 天后再巩固一次"""
+    try:
+        # SET 左到右求值：先判 mastered（此时 correct_streak 还是旧值），再自增
+        execute(
+            "UPDATE wrong_book SET "
+            "mastered = CASE WHEN correct_streak + 1 >= 2 THEN 1 ELSE mastered END, "
+            "correct_streak = correct_streak + 1, "
+            "next_review = CASE WHEN correct_streak + 1 >= 2 "
+            "  THEN DATE_ADD(CURDATE(), INTERVAL 7 DAY) "
+            "  ELSE DATE_ADD(CURDATE(), INTERVAL 3 DAY) END "
+            "WHERE user_id=%s AND question_id=%s",
+            (uid, qid))
+    except Exception:
+        execute(
+            "UPDATE wrong_book SET "
+            "mastered = CASE WHEN correct_streak + 1 >= 2 THEN 1 ELSE mastered END, "
+            "correct_streak = correct_streak + 1 "
+            "WHERE user_id=%s AND question_id=%s",
+            (uid, qid))
+
+
 def _ongoing_exam(uid):
     """该学生最近一场未完成考试（自由卷/任务卷），用于全站顶部续考横幅。
     返回 dict 或 None：remain_sec=None 表示不限时/练习；paused 表示任务练习已暂停。"""
@@ -308,6 +386,15 @@ def index():
                  one=True)['c'],
         my_wrong=q("SELECT COUNT(*) c FROM wrong_book WHERE user_id=%s "
                    "AND mastered=0", (session['uid'],), one=True)['c'],
+        # 首页「今日任务」驱动：今日已练题数 + 最近一次模考得分 + 今日待复习
+        today_done=q("SELECT COUNT(*) c FROM practice WHERE user_id=%s "
+                     "AND DATE(practiced_at)=CURDATE()", (session['uid'],),
+                     one=True)['c'],
+        due_wrong=_due_wrong(session['uid']),
+        last_score=(lambda r: r['score'] if r else None)(
+            q("SELECT score FROM exam_paper WHERE user_id=%s "
+              "AND status='finished' ORDER BY submitted_at DESC LIMIT 1",
+              (session['uid'],), one=True)),
     )
     # 学生：我的任务（待完成 + 已完成两块）
     my_tasks = []
@@ -589,11 +676,7 @@ def exam_submit(pid):
         score += ok
         # 考试答错 -> 写入错题本
         if not ok:
-            execute(
-                "INSERT INTO wrong_book (user_id, question_id) VALUES (%s, %s) "
-                "ON DUPLICATE KEY UPDATE wrong_count = wrong_count + 1, "
-                "last_wrong_at = CURRENT_TIMESTAMP, mastered = 0",
-                (session['uid'], d['question_id']))
+            _wb_mark_wrong(session['uid'], d['question_id'])
 
     total = paper['total_count']
     final_score = round(score * 100.0 / total, 2)
@@ -785,19 +868,9 @@ def practice_answer():
             (session['uid'], qid, ''.join(sorted(labels)) or None, int(ok)))
     # 维护错题本：连对 2 次自动标记"已掌握"移出；答错重置连对计数并累计错次
     if ok:
-        # 注意 SET 左到右求值：先判 mastered（此时 correct_streak 为旧值），再自增
-        execute(
-            "UPDATE wrong_book SET "
-            "mastered = CASE WHEN correct_streak + 1 >= 2 THEN 1 ELSE mastered END, "
-            "correct_streak = correct_streak + 1 "
-            "WHERE user_id=%s AND question_id=%s",
-            (session['uid'], qid))
+        _wb_mark_right(session['uid'], qid)
     else:
-        execute(
-            "INSERT INTO wrong_book (user_id, question_id) VALUES (%s, %s) "
-            "ON DUPLICATE KEY UPDATE wrong_count = wrong_count + 1, "
-            "last_wrong_at = CURRENT_TIMESTAMP, mastered = 0, correct_streak = 0",
-            (session['uid'], qid))
+        _wb_mark_wrong(session['uid'], qid)
 
     session['p_feedback'] = dict(
         ok=ok,
@@ -857,22 +930,53 @@ def _similar_questions(qid, n=3):
 @app.route('/wrongbook')
 @login_required
 def wrongbook():
+    # 到期的排前面，其次按最近答错时间
+    order = ("(wb.next_review IS NULL OR wb.next_review <= CURDATE()) DESC, "
+             if _srs_enabled() else "")
+    extra = ", wb.next_review" if _srs_enabled() else ""
     rows = q(
-        "SELECT wb.id, wb.wrong_count, wb.correct_streak, wb.last_wrong_at, "
+        "SELECT wb.id, wb.wrong_count, wb.correct_streak, wb.last_wrong_at "
+        + extra + ", "
         "q.id AS qid, q.stem, q.qtype FROM wrong_book wb "
         "JOIN question q ON q.id = wb.question_id "
-        "WHERE wb.user_id=%s AND wb.mastered=0 ORDER BY wb.last_wrong_at DESC",
+        "WHERE wb.user_id=%s AND wb.mastered=0 "
+        "ORDER BY " + order + "wb.last_wrong_at DESC",
         (session['uid'],))
     items = load_questions([r['qid'] for r in rows])
     for r, it in zip(rows, items):
         it['wrong_count'] = r['wrong_count']
         it['correct_streak'] = r['correct_streak']
         it['last_wrong_at'] = r['last_wrong_at']
+        # 是否到期（未迁移时视为全部到期）
+        it['due'] = True if not _srs_enabled() else (
+            r.get('next_review') is None or str(r.get('next_review')) <= str(date.today()))
     # C19 相似题推荐（前 20 题计算，避免长列表过慢）
     sim_map = {it['id']: _similar_questions(it['id']) for it in items[:20]}
     fav_ids = _fav_ids(session['uid'], [it['id'] for it in items])
     return render_template('wrongbook.html', questions=items, sim_map=sim_map,
-                           fav_ids=fav_ids)
+                           fav_ids=fav_ids, due_n=_due_wrong(session['uid']))
+
+
+@app.route('/wrongbook/due', methods=['POST'])
+@login_required
+def wrongbook_due():
+    """开始「今日待复习」：只取 next_review 到期的错题"""
+    rows = q(
+        "SELECT wb.question_id FROM wrong_book wb "
+        "JOIN question q ON q.id=wb.question_id "
+        "WHERE wb.user_id=%s AND wb.mastered=0 AND q.is_deleted=0"
+        + _due_cond('wb.') +
+        " ORDER BY wb.wrong_count DESC",
+        (session['uid'],))
+    ids = [r['question_id'] for r in rows]
+    if not ids:
+        flash('今天没有到期的错题，明天再来！', 'success')
+        return redirect(url_for('wrongbook'))
+    session['p_reveal'] = False
+    session['p_ids'] = ids
+    session['p_mode'] = 'wrong'
+    session['p_mode_label'] = '今日复习'
+    return redirect(url_for('practice_page', idx=0))
 
 
 @app.route('/wrongbook/master/<int:qid>', methods=['POST'])
@@ -918,11 +1022,7 @@ def sim_wrong_record():
         return jsonify(ok=False), 400
     execute("INSERT INTO practice (user_id, question_id, user_answer, is_correct) "
             "VALUES (%s, %s, NULL, 0)", (session['uid'], qid))
-    execute(
-        "INSERT INTO wrong_book (user_id, question_id) VALUES (%s, %s) "
-        "ON DUPLICATE KEY UPDATE wrong_count = wrong_count + 1, "
-        "last_wrong_at = CURRENT_TIMESTAMP, mastered = 0, correct_streak = 0",
-        (session['uid'], qid))
+    _wb_mark_wrong(session['uid'], qid)
     return jsonify(ok=True)
 
 

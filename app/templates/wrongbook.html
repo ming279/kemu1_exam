@@ -9,7 +9,25 @@
   </form>
   {% endif %}
 </h2>
-{% if not questions %}<div class="card">太棒了，没有未掌握的错题！</div>{% endif %}
+{% if due_n %}
+<div class="card card-info" style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
+  <div style="flex:1;min-width:220px;">
+    <b>今日待复习：{{ due_n }} 题</b>
+    <p class="muted" style="margin:2px 0 0;">到期的错题优先练，连对 2 次自动移出错题本。</p>
+  </div>
+  <form method="post" action="{{ url_for('wrongbook_due') }}">
+    <button class="btn" type="submit">开始今日复习 →</button>
+  </form>
+</div>
+{% endif %}
+{% if not questions %}
+<div class="card empty">
+  <span class="e-ico">🎉</span>
+  <div class="e-t">太棒了，没有未掌握的错题！</div>
+  <div class="e-d">保持手感，去做一套模拟考检验一下。</div>
+  <a class="btn" href="{{ url_for('practice_home') }}">去练习中心</a>
+</div>
+{% endif %}
 {% for q in questions %}
 <div class="card q-card wrong">
   <span class="qtype">{{ QTYPE_NAME[q.qtype] }}</span>

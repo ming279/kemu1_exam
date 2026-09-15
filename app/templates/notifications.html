@@ -47,7 +47,11 @@
 
 <div class="card">
   {% if not notis %}
-  <p class="muted">暂无通知。任务发布、PK 挑战邀请{% if students is not none %}、管理员通知{% endif %}都会出现在这里。</p>
+  <div class="empty">
+    <span class="e-ico">🔔</span>
+    <div class="e-t">暂无通知</div>
+    <div class="e-d">任务发布、PK 挑战邀请{% if students is not none %}、管理员通知{% endif %}都会出现在这里。</div>
+  </div>
   {% endif %}
   {% for n in notis %}
   <div class="noti-item">
